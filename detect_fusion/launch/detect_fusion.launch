@@ -1,0 +1,61 @@
+<launch>
+
+  <!-- =========================
+       Args
+       ========================= -->
+  <arg name="use_sim_time" default="false"/>
+
+  <!-- Frames -->
+  <arg name="base_frame" default="base_link"/>
+  <arg name="camera_frame" default="camera_link"/>
+  <arg name="map_frame" default="map"/>
+
+  <!-- Topics -->
+  <arg name="rgb_topic" default="/camera/color/image_raw"/>
+  <arg name="depth_topic" default="/camera/depth/image_rect_raw"/>
+  <arg name="camera_info_topic" default="/camera/color/camera_info"/>
+
+  <arg name="scan_topic" default="/scan"/>
+
+  <!-- =========================
+       Node: Detect Fusion
+       ========================= -->
+  <node
+    pkg="detect_fusion"
+    exec="detect_fusion_node"
+    name="detect_fusion"
+    output="screen">
+  </node>
+    <!-- =========================
+         Node: YOLO Detector
+         ========================= -->
+  
+  <node
+    pkg="yolo_detect"
+    exec="yolo_node"
+    name="yolo_detector"
+    output="screen">
+
+    <!-- <param name="model_path" value="$(var use_sim_time)"/> -->
+    <param name="device" value="cuda:0"/>
+    <param name="image_topic" value="$(var rgb_topic)"/>
+  </node>
+    <!-- =========================
+         Node: PC BBox Pose
+         ========================= -->
+
+  <node
+    pkg="pc_bbox_pose"
+    exec="pc_bbox_pose_node"
+    name="pc_bbox_pose"
+    output="screen">
+
+    <param name="cloud_topic" value="$(var depth_topic)"/>
+    <param name="buffer_size" value="10"/>
+    <param name="max_dt_sec" value="0.1"/>
+    <param name="sample_step" value="3"/>
+    <param name="min_valid" value="20"/>
+  </node>
+ 
+
+</launch>
