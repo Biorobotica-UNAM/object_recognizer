@@ -11,7 +11,7 @@ from yolo_detect.yolo_backend import YoloBackend
 
 class YoloDetectNode(Node):
     def __init__(self):
-        super().__init__("yolo_detect_node")
+        super().__init__("yolo_detect_node", namespace="yolo")
 
         self.declare_parameter("model_path", "yolo11m.pt")
         self.declare_parameter("device", "cuda:0")
@@ -30,7 +30,7 @@ class YoloDetectNode(Node):
 
         self.publisher_enabled = False
         self.create_subscription(Image, image_topic, self._img_cb, 10)
-        self._detection_pub = self.create_publisher(Image, "yolo_detections", 10)
+        self._detection_pub = self.create_publisher(Image, "detections", 10)
 
         self.create_service(GetBbox, "get_bbox", self._handle_get_bbox)
         self.create_service(Trigger, "publish_detections/enable", self._hanldle_publish_detections)

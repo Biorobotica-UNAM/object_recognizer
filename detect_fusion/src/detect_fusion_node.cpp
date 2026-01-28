@@ -1,14 +1,21 @@
-#include <rclcpp/rclcpp.hpp>
-#include <detector_interfaces/srv/get_bbox.hpp>
-#include <detector_interfaces/srv/bbox_to_pose.hpp>
-#include <detector_interfaces/srv/detect_by_class.hpp>
+#include <chrono>
 #include <memory>
+#include <string>
+#include <future>
+
+#include "rclcpp/rclcpp.hpp"
+#include "detector_interfaces/srv/get_bbox.hpp"
+#include "detector_interfaces/srv/bbox_to_pose.hpp"
+#include "detector_interfaces/srv/detect_by_class.hpp"
 
 using detector_interfaces::srv::GetBbox;
 using detector_interfaces::srv::BboxToPose;
 using detector_interfaces::srv::DetectByClass;
 
-class DetectFusionNode : public rclcpp::Node
+
+class DetectFusionNode
+  : public rclcpp::Node
+  , public std::enable_shared_from_this<DetectFusionNode>
 {
 public:
   DetectFusionNode() : Node("detect_fusion_node")
@@ -16,19 +23,34 @@ public:
     declare_parameter<double>("timeout_sec", 1.0);
     timeout_ = std::chrono::duration<double>(get_parameter("timeout_sec").as_double());
 
-    yolo_srv_name_ = "/get_bbox";
+    detector_services_ = {
+      {"YOLO", "/yolo/get_bbox"},
+      {"OWL",  "/owl/get_bbox"},
+      //{"DINO", "/dino/get_bbox"}
+    };
+
     pc_srv_name_   = "/bbox_to_pose";
 
-    yolo_client_ = create_client<GetBbox>(yolo_srv_name_);
-    pc_client_   = create_client<BboxToPose>(pc_srv_name_);
+    // Callback groups:
+    // - service callback: mutually exclusive (evita reentrancia del propio service)
+    // - clients: reentrant (permite procesar respuestas mientras esperamos futures)
+    cbg_srv_     = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    cbg_clients_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
-    srv_ = create_service<DetectByClass>(
-      "detect_by_class",
-      std::bind(&DetectFusionNode::handle, this,
-                std::placeholders::_1, std::placeholders::_2));
+    //yolo_client_ = this->create_client<GetBbox>(yolo_srv_name_, rclcpp::ServicesQoS(), cbg_clients_);
+    for (const auto& [model, service_name] : detector_services_){
+      detectors_[model] = this->create_client<GetBbox>(service_name, rclcpp::ServicesQoS(), cbg_clients_);
+      RCLCPP_INFO(get_logger(), "Detector client for %s created, service: %s", model.c_str(), service_name.c_str());
+    }
 
-    RCLCPP_INFO(get_logger(), "Fusion async service ready. Calls %s and %s",
-                yolo_srv_name_.c_str(), pc_srv_name_.c_str());
+    pc_client_   = this->create_client<BboxToPose>(pc_srv_name_, rclcpp::ServicesQoS(), cbg_clients_);
+
+    srv_ = this->create_service<DetectByClass>(
+      "/detect_by_class",
+      std::bind(&DetectFusionNode::handle, this, std::placeholders::_1, std::placeholders::_2),
+      rclcpp::ServicesQoS(), cbg_srv_);
+
+    RCLCPP_INFO(get_logger(), "Detect fusion service ready: /detect_by_class");
   }
 
 private:
@@ -37,71 +59,92 @@ private:
   {
     res->success = false;
 
-    // Espera a que los servicios existan (async no bloqueante)
-    if (!yolo_client_->wait_for_service(std::chrono::milliseconds(500))) {
-      RCLCPP_WARN(get_logger(), "YOLO service not available");
+    if(req->class_name.empty()) {
+      res->message = "Empty class name";
+      return;
+    }
+
+    auto it = detectors_.find(req->model);
+    if (it == detectors_.end()) {
+      res->message = "Unknown detector model: " + req->model;
+      return;
+    }
+    auto detector_client_ = it->second;
+
+
+    // Espera a que existan servicios (rápido)
+    if (!detector_client_->wait_for_service(std::chrono::milliseconds(500))) {
+      res->message = ("Detector %s service not available", req->model.c_str());
       return;
     }
     if (!pc_client_->wait_for_service(std::chrono::milliseconds(500))) {
-      RCLCPP_WARN(get_logger(), "PC service not available");
+      res->message = "PointCloud service not available";
       return;
     }
 
-    auto yreq = std::make_shared<GetBbox::Request>();
-    yreq->class_name = req->class_name;
+    auto node_base = this->get_node_base_interface();
 
-    // Async YOLO call
-    auto y_future = yolo_client_->async_send_request(
-      yreq,
-      [this, res, req](rclcpp::Client<GetBbox>::SharedFuture yres_future) {
-        auto yres = yres_future.get();
-        if (!yres->success) {
-          RCLCPP_WARN(get_logger(), "YOLO failed");
-          return;
-        }
+    // 1) Call Detector service
+    auto dreq = std::make_shared<GetBbox::Request>();
+    dreq->class_name = req->class_name;
 
-        // Prepara request para PC
-        auto preq = std::make_shared<BboxToPose::Request>();
-        preq->header = yres->header;
-        preq->x1 = yres->x1;
-        preq->y1 = yres->y1;
-        preq->x2 = yres->x2;
-        preq->y2 = yres->y2;
+    auto d_future = detector_client_->async_send_request(dreq);
 
-        RCLCPP_INFO(get_logger(), "YOLO detected bbox (%d,%d)-(%d,%d) for class %s",
-                        preq->x1, preq->y1, preq->x2, preq->y2,
-                        req->class_name.c_str());
+    if (d_future.wait_for(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_)) !=
+        std::future_status::ready)
+    {
+      res->message = "PointCloud call failed/timeout";
+      return;
+    }
 
-        // Async PC call
-        auto p_future = pc_client_->async_send_request(
-          preq,
-          [res, this](rclcpp::Client<BboxToPose>::SharedFuture pres_future) {
-            auto pres = pres_future.get();
-            if (!pres->success) {
-              RCLCPP_WARN(get_logger(), "PC service failed");
-              return;
-            }
-            
+    auto dres = d_future.get();
+    if (!dres->success) {
+      res->message = "YOLO returned success=false";
+      return;
+    }
 
-              RCLCPP_WARN(get_logger(), "PC wuuuuu   failed");
+    // 2) Call PointCloud service
+    auto preq = std::make_shared<BboxToPose::Request>();
+    preq->header = dres->header;
+    preq->x1 = dres->x1;
+    preq->y1 = dres->y1;
+    preq->x2 = dres->x2;
+    preq->y2 = dres->y2;
 
-            // Devuelve respuesta
-            res->pose = pres->pose;
-            res->success = true;
-            RCLCPP_INFO(get_logger(), "Detection fusion succeeded");
-            RCLCPP_INFO(get_logger(), "Object pose: (%.2f, %.2f, %.2f)",
-                        pres->pose.pose.position.x,
-                        pres->pose.pose.position.y,
-                        pres->pose.pose.position.z);
-          });
-      });
+    auto p_future = pc_client_->async_send_request(preq);
+
+    if (p_future.wait_for(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_)) !=
+        std::future_status::ready)
+    {
+      res->message = "PointCloud call failed/timeout";
+      return;
+    }
+
+    auto pres = p_future.get();
+    if (!pres->success) {
+      res->message = "PointCloud returned success=false";
+      return;
+    }
+
+    // 3) Respose generation
+    res->pose = pres->pose;
+    res->message = "Detection successful";
+    res->success = true;
+
   }
 
-  std::string yolo_srv_name_;
   std::string pc_srv_name_;
   std::chrono::duration<double> timeout_;
 
-  rclcpp::Client<GetBbox>::SharedPtr yolo_client_;
+  rclcpp::CallbackGroup::SharedPtr cbg_srv_;
+  rclcpp::CallbackGroup::SharedPtr cbg_clients_;
+
+  std::unordered_map<std::string, std::string> detector_services_;
+  std::unordered_map<std::string, rclcpp::Client<GetBbox>::SharedPtr> detectors_;
+
+  rclcpp::Client<GetBbox>::SharedPtr detector_client_;
   rclcpp::Client<BboxToPose>::SharedPtr pc_client_;
   rclcpp::Service<DetectByClass>::SharedPtr srv_;
 };
@@ -109,9 +152,14 @@ private:
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
+
   auto node = std::make_shared<DetectFusionNode>();
 
-  rclcpp::spin(node);
+  // CRÍTICO: MultiThreadedExecutor para evitar atorón mientras esperas futures
+  rclcpp::executors::MultiThreadedExecutor exec;
+  exec.add_node(node);
+  exec.spin();
+
   rclcpp::shutdown();
   return 0;
 }
