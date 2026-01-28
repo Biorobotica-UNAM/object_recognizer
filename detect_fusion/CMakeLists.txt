@@ -16,7 +16,6 @@ ament_target_dependencies(detect_fusion_node rclcpp detector_interfaces)
 install(TARGETS detect_fusion_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY
   launch
-  config
   DESTINATION share/${PROJECT_NAME}
 )
 

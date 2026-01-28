@@ -1,6 +1,8 @@
+from ultralytics import YOLO
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import numpy as np
+import cv2
 
 @dataclass
 class Detection:
@@ -10,7 +12,6 @@ class Detection:
 
 class YoloBackend:
     def __init__(self, model_path: str, device: str = "cuda:0", conf_th: float = 0.5):
-        from ultralytics import YOLO
         self.model = YOLO(model_path)
         self.device = device
         self.conf_th = float(conf_th)
@@ -41,6 +42,15 @@ class YoloBackend:
                 continue
             dets.append(Detection(str(names.get(int(cid), str(cid))), float(c), (x1i, y1i, x2i, y2i)))
         return dets
+    
+    def draw_detections(self, bgr: np.ndarray, dets: List[Detection]) -> np.ndarray:
+        drawn = bgr.copy()
+        for det in dets:
+            x1, y1, x2, y2 = det.xyxy
+            cv2.rectangle(drawn, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            label = f"{det.class_name}: {det.conf:.2f}"
+            cv2.putText(drawn, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        return drawn
 
     @staticmethod
     def pick_best_by_class(dets: List[Detection], wanted: str) -> Optional[Detection]:

@@ -11,8 +11,8 @@
   <arg name="map_frame" default="map"/>
 
   <!-- Topics -->
-  <arg name="rgb_topic" default="/camera/color/image_raw"/>
-  <arg name="depth_topic" default="/camera/depth/image_rect_raw"/>
+  <arg name="rgb_topic" default="/kinect/image_raw"/>
+  <arg name="depth_topic" default="/kinect/points"/>
   <arg name="camera_info_topic" default="/camera/color/camera_info"/>
 
   <arg name="scan_topic" default="/scan"/>
