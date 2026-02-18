@@ -5,7 +5,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-from detector_interfaces.srv import GetBbox
+from vision_interfaces.srv import GetBbox
 from std_srvs.srv import Trigger
 from yolo_detect.yolo_backend import YoloBackend
 

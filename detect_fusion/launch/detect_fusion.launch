@@ -56,6 +56,21 @@
     <param name="sample_step" value="3"/>
     <param name="min_valid" value="20"/>
   </node>
+  
+    <!-- =========================
+         Node: OWLV2 Detector
+         ========================= -->
+  
+  <node
+    pkg="owlv2_detect"
+    exec="owlv2_node"
+    name="OWLv2_detector"
+    output="screen">
+
+    <!-- <param name="model_path" value="$(var use_sim_time)"/> -->
+    <param name="device" value="cuda:0"/>
+    <param name="image_topic" value="$(var rgb_topic)"/>
+  </node>
  
 
 </launch>

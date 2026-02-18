@@ -4,13 +4,15 @@
 #include <future>
 
 #include "rclcpp/rclcpp.hpp"
-#include "detector_interfaces/srv/get_bbox.hpp"
-#include "detector_interfaces/srv/bbox_to_pose.hpp"
-#include "detector_interfaces/srv/detect_by_class.hpp"
+#include "vision_interfaces/srv/get_bbox.hpp"
+#include "vision_interfaces/srv/bbox_to_pose.hpp"
+#include "vision_interfaces/srv/detect_by_class.hpp"
+#include "vision_interfaces/srv/owlv2_service.hpp"
 
-using detector_interfaces::srv::GetBbox;
-using detector_interfaces::srv::BboxToPose;
-using detector_interfaces::srv::DetectByClass;
+using vision_interfaces::srv::GetBbox;
+using vision_interfaces::srv::BboxToPose;
+using vision_interfaces::srv::DetectByClass;
+using vision_interfaces::srv::Owlv2Service;
 
 
 class DetectFusionNode
@@ -20,20 +22,18 @@ class DetectFusionNode
 public:
   DetectFusionNode() : Node("detect_fusion_node")
   {
-    declare_parameter<double>("timeout_sec", 1.0);
+    declare_parameter<double>("timeout_sec", 5.0);
     timeout_ = std::chrono::duration<double>(get_parameter("timeout_sec").as_double());
 
     detector_services_ = {
       {"YOLO", "/yolo/get_bbox"},
-      {"OWL",  "/owl/get_bbox"},
+      {"OWL",  "/owl/Owlv2Service"},
       //{"DINO", "/dino/get_bbox"}
     };
 
     pc_srv_name_   = "/bbox_to_pose";
 
     // Callback groups:
-    // - service callback: mutually exclusive (evita reentrancia del propio service)
-    // - clients: reentrant (permite procesar respuestas mientras esperamos futures)
     cbg_srv_     = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     cbg_clients_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
@@ -54,7 +54,7 @@ public:
   }
 
 private:
-  void handle(const std::shared_ptr<DetectByClass::Request> req,
+ void handle(const std::shared_ptr<DetectByClass::Request> req,
               std::shared_ptr<DetectByClass::Response> res)
   {
     res->success = false;
@@ -69,43 +69,49 @@ private:
       res->message = "Unknown detector model: " + req->model;
       return;
     }
-    auto detector_client_ = it->second;
+    auto detector_client_ptr = it->second;
 
-
-    // Espera a que existan servicios (rápido)
-    if (!detector_client_->wait_for_service(std::chrono::milliseconds(500))) {
-      res->message = ("Detector %s service not available", req->model.c_str());
+    // 1. Espera a que existan los servicios
+    if (!detector_client_ptr->wait_for_service(std::chrono::seconds(1))) {
+      res->message = "Detector " + req->model + " service not available";
       return;
     }
-    if (!pc_client_->wait_for_service(std::chrono::milliseconds(500))) {
+    if (!pc_client_->wait_for_service(std::chrono::seconds(1))) {
       res->message = "PointCloud service not available";
       return;
     }
 
-    auto node_base = this->get_node_base_interface();
-
-    // 1) Call Detector service
+    // 2. Llamada al Detector (YOLO/OWL)
     auto dreq = std::make_shared<GetBbox::Request>();
     dreq->class_name = req->class_name;
 
-    auto d_future = detector_client_->async_send_request(dreq);
+    auto d_future = detector_client_ptr->async_send_request(dreq);
 
-    if (d_future.wait_for(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_)) !=
-        std::future_status::ready)
+    auto d_status = d_future.wait_for(std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_));
+    if (d_status != std::future_status::ready)
     {
-      res->message = "PointCloud call failed/timeout";
+      res->message = "Detector call timeout (Model: " + req->model + ")";
       return;
     }
 
     auto dres = d_future.get();
     if (!dres->success) {
-      res->message = "YOLO returned success=false";
+      res->message = req->model + " returned success=false";
       return;
     }
 
-    // 2) Call PointCloud service
     auto preq = std::make_shared<BboxToPose::Request>();
+    
+    // Seguridad para el Header
+    if (dres->header.stamp.sec == 0) {
+        RCLCPP_WARN(this->get_logger(), "Detector %s sent empty timestamp. Using current time.", req->model.c_str());
+        preq->header.stamp = this->get_clock()->now();
+        preq->header.frame_id = "/kinect/image_raw";
+    } else {
+        preq->header = dres->header;
+    }
+
+    // PointCloud service
     preq->header = dres->header;
     preq->x1 = dres->x1;
     preq->y1 = dres->y1;
@@ -114,11 +120,10 @@ private:
 
     auto p_future = pc_client_->async_send_request(preq);
 
-    if (p_future.wait_for(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_)) !=
-        std::future_status::ready)
+    auto p_status = p_future.wait_for(std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_));
+    if (p_status != std::future_status::ready)
     {
-      res->message = "PointCloud call failed/timeout";
+      res->message = "PointCloud call timeout";
       return;
     }
 
@@ -128,11 +133,9 @@ private:
       return;
     }
 
-    // 3) Respose generation
     res->pose = pres->pose;
-    res->message = "Detection successful";
+    res->message = "Detection successful with " + req->model;
     res->success = true;
-
   }
 
   std::string pc_srv_name_;
@@ -154,8 +157,6 @@ int main(int argc, char** argv)
   rclcpp::init(argc, argv);
 
   auto node = std::make_shared<DetectFusionNode>();
-
-  // CRÍTICO: MultiThreadedExecutor para evitar atorón mientras esperas futures
   rclcpp::executors::MultiThreadedExecutor exec;
   exec.add_node(node);
   exec.spin();

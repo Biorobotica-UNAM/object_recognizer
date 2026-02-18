@@ -1,7 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <detector_interfaces/srv/bbox_to_pose.hpp>
+#include <vision_interfaces/srv/bbox_to_pose.hpp>
 
 #include <chrono>
 #include <deque>
@@ -12,7 +12,7 @@
 #include <vector>
 
 using sensor_msgs::msg::PointCloud2;
-using detector_interfaces::srv::BboxToPose;
+using vision_interfaces::srv::BboxToPose;
 
 class PcBboxPoseNode : public rclcpp::Node {
 public:
@@ -47,8 +47,8 @@ private:
     last_cloud_ = msg;
   }
 
-   void handle(const std::shared_ptr<BboxToPose::Request> req,
-              std::shared_ptr<BboxToPose::Response> res) {
+   void handle(const std::shared_ptr<vision_interfaces::srv::BboxToPose::Request> req,
+              std::shared_ptr<vision_interfaces::srv::BboxToPose::Response> res) {
 
     if (!last_cloud_) {
       RCLCPP_WARN(get_logger(), "No PointCloud received yet");
@@ -133,7 +133,7 @@ private:
 
   PointCloud2::SharedPtr last_cloud_;
   rclcpp::Subscription<PointCloud2>::SharedPtr sub_;
-  rclcpp::Service<BboxToPose>::SharedPtr srv_;
+  rclcpp::Service<vision_interfaces::srv::BboxToPose>::SharedPtr srv_;
 
   std::string cloud_topic_ ;
   int buffer_size_ ;

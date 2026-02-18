@@ -10,6 +10,9 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/YoloService.srv"
   "srv/Owlv2Service.srv"
+  "srv/BboxToPose.srv"
+  "srv/DetectByClass.srv"
+  "srv/GetBbox.srv"
   
   DEPENDENCIES sensor_msgs geometry_msgs std_msgs
 )

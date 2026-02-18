@@ -10,11 +10,11 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(detector_interfaces REQUIRED)
+find_package(vision_interfaces REQUIRED)
 
 add_executable(pc_bbox_pose_node src/pc_bbox_pose_node.cpp)
 ament_target_dependencies(pc_bbox_pose_node
-  rclcpp sensor_msgs geometry_msgs detector_interfaces
+  rclcpp sensor_msgs geometry_msgs vision_interfaces
 )
 
 install(TARGETS pc_bbox_pose_node

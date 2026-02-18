@@ -8,10 +8,10 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(detector_interfaces REQUIRED)
+find_package(vision_interfaces REQUIRED)
 
 add_executable(detect_fusion_node src/detect_fusion_node.cpp)
-ament_target_dependencies(detect_fusion_node rclcpp detector_interfaces)
+ament_target_dependencies(detect_fusion_node rclcpp vision_interfaces)
 
 install(TARGETS detect_fusion_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY
