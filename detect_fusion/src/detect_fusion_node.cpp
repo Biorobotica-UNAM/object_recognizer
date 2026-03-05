@@ -39,16 +39,17 @@ public:
 
     //yolo_client_ = this->create_client<GetBbox>(yolo_srv_name_, rclcpp::ServicesQoS(), cbg_clients_);
     for (const auto& [model, service_name] : detector_services_){
-      detectors_[model] = this->create_client<GetBbox>(service_name, rclcpp::ServicesQoS(), cbg_clients_);
+      detectors_[model] = this->create_client<GetBbox>(service_name, rmw_qos_profile_services_default, cbg_clients_);
       RCLCPP_INFO(get_logger(), "Detector client for %s created, service: %s", model.c_str(), service_name.c_str());
     }
 
-    pc_client_   = this->create_client<BboxToPose>(pc_srv_name_, rclcpp::ServicesQoS(), cbg_clients_);
+    pc_client_   = this->create_client<BboxToPose>(pc_srv_name_, rmw_qos_profile_services_default, cbg_clients_);
 
+    //auto service_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     srv_ = this->create_service<DetectByClass>(
       "/detect_by_class",
       std::bind(&DetectFusionNode::handle, this, std::placeholders::_1, std::placeholders::_2),
-      rclcpp::ServicesQoS(), cbg_srv_);
+      rmw_qos_profile_services_default, cbg_srv_);
 
     RCLCPP_INFO(get_logger(), "Detect fusion service ready: /detect_by_class");
   }
