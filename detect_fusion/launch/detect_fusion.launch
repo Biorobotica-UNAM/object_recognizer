@@ -26,20 +26,7 @@
     name="detect_fusion"
     output="screen">
   </node>
-    <!-- =========================
-         Node: YOLO Detector
-         ========================= -->
   
-  <node
-    pkg="yolo_detect"
-    exec="yolo_node"
-    name="yolo_detector"
-    output="screen">
-
-    <!-- <param name="model_path" value="$(var use_sim_time)"/> -->
-    <param name="device" value="cuda:0"/>
-    <param name="image_topic" value="$(var rgb_topic)"/>
-  </node>
     <!-- =========================
          Node: PC BBox Pose
          ========================= -->
@@ -56,7 +43,6 @@
     <param name="sample_step" value="3"/>
     <param name="min_valid" value="20"/>
   </node>
-  
     <!-- =========================
          Node: OWLV2 Detector
          ========================= -->
@@ -70,6 +56,28 @@
     <!-- <param name="model_path" value="$(var use_sim_time)"/> -->
     <param name="device" value="cuda:0"/>
     <param name="image_topic" value="$(var rgb_topic)"/>
+  </node>
+    <!-- =========================
+         Node: YOLO Detector Master
+         ========================= -->
+
+  <node
+    pkg="yolo_detect"
+    exec="yolo_detect_node"
+    name="yolo_detect_node" 
+    output="screen">
+    <param name="device" value="cuda:0"/>
+    <param name="detect_topic" value="$(var rgb_topic)"/>
+  </node>
+    <!-- =========================
+         Node: Seats Detector
+         ========================= -->
+
+  <node
+    pkg="seats_detect"
+    exec="seats_detect"
+    name="detect_seats"
+    output="screen">
   </node>
  
 

@@ -16,7 +16,7 @@ class YoloDetectNode(Node):
         self.declare_parameter("model_path", "yolo11m.pt")
         self.declare_parameter("device", "cuda:0")
         self.declare_parameter("conf_th", 0.5)
-        self.declare_parameter("image_topic", "/image")
+        self.declare_parameter("image_topic", "/kinect/image_raw")
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         device = self.get_parameter("device").get_parameter_value().string_value
@@ -33,7 +33,7 @@ class YoloDetectNode(Node):
         self._detection_pub = self.create_publisher(Image, "detections", 10)
 
         self.create_service(GetBbox, "get_bbox", self._handle_get_bbox)
-        self.create_service(Trigger, "publish_detections/enable", self._hanldle_publish_detections)
+        self.create_service(Trigger, "publish_detections/enable", self._hanldle_publish_image_detections)
 
         self.get_logger().info(f"YOLO ready. topic={image_topic} model={model_path} device={device} conf={conf_th}")
 
@@ -54,7 +54,7 @@ class YoloDetectNode(Node):
         drawn_msg.header = self._last_image.header
         self._detection_pub.publish(drawn_msg)
 
-    def _hanldle_publish_detections(self, req: Trigger.Request, res: Trigger.Response):
+    def _hanldle_publish_image_detections(self, req: Trigger.Request, res: Trigger.Response):
         self.publisher_enabled = True
         res.success = True
         return res

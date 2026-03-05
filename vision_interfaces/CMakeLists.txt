@@ -13,6 +13,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/BboxToPose.srv"
   "srv/DetectByClass.srv"
   "srv/GetBbox.srv"
+  "msg/YoloDetection.msg"
+  "msg/YoloDetections.msg"
   
   DEPENDENCIES sensor_msgs geometry_msgs std_msgs
 )

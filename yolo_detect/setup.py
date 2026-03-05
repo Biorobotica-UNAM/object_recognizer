@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'yolo_node = yolo_detect.yolo_node:main',
+            'yolo_image_node = yolo_detect.yolo_image_node:main',
+            'yolo_detect_node = yolo_detect.yolo_detect_node:main',
         ],
     },
 )
