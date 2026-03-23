@@ -7,7 +7,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from vision_interfaces.srv import GetBbox
 from vision_interfaces.msg import YoloDetection, YoloDetections
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
 from yolo_detect.yolo_backend import YoloBackend
 
 class YoloDetectNode(Node):
@@ -18,29 +18,28 @@ class YoloDetectNode(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ("model_path", "yolo11m.pt"),
-                ("device", "cuda:0"),
+                ("model_name", "yolo11m.pt"),
+                ("device", "cuda"),
                 ("conf_th", 0.5),
-                ("detect_topic", "/kinect/image_raw"),
-                ("enable_continuous", False) # Nuevo: ¿Correr siempre o bajo demanda?
+                ("image_topic", "/camera/rgb/image_raw"),
             ]
         )
 
-        model_path = self.get_parameter("model_path").value
+        model_name = self.get_parameter("model_name").value
         device = self.get_parameter("device").value
         conf_th = self.get_parameter("conf_th").value
-        detect_topic = self.get_parameter("detect_topic").value
+        image_topic = self.get_parameter("image_topic").value
         self.continuous = self.get_parameter("enable_continuous").value
 
         # 2. Inicialización de YOLO
         self.bridge = CvBridge()
         # Mantenemos el backend pero asegúrate de que use Half Precision (FP16) si es CUDA
-        self.yolo = YoloBackend(model_path=model_path, device=device, conf_th=conf_th)
+        self.yolo = YoloBackend(model_name=model_name, device=device, conf_th=conf_th)
 
-        # 3. QoS para imágenes (Crucial para evitar lag)
+        # 3. QoS para imágenes 
         image_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
-            depth=1 # Solo procesar el frame más actual
+            depth=1
         )
 
         # 4. Estado interno
@@ -49,19 +48,19 @@ class YoloDetectNode(Node):
         self._results_text = "No detections yet"
 
         # 5. Comunicaciones
-        self.create_subscription(Image, detect_topic, self._img_cb, image_qos)
+        self.create_subscription(Image, image_topic, self._img_cb, image_qos)
         self._detections_pub = self.create_publisher(YoloDetections, "detections_list", 10)
         
         self.create_service(GetBbox, "get_bbox", self._handle_get_bbox)
         self.create_service(Trigger, "detection", self._handle_service_request)
+        self.create_service(SetBool, "enable_continuous", self._handle_enable_continuous)
+        time_period = 1.0 / 10.0  # 10 Hz
+        self.timer = self.create_timer(time_period, self._do_inference)
 
-        self.get_logger().info(f"YOLO OPTIMIZED: Model={model_path} en {device}")
+        self.get_logger().info(f"YOLO OPTIMIZED: Model={model_name} en {device}")
 
     def _img_cb(self, msg: Image):
         self._last_image = msg
-        # Si el modo continuo está activo, procesamos cada frame
-        if self.continuous:
-            self._do_inference()
 
     def _do_inference(self):
         """Método central de procesamiento para evitar duplicar código"""
@@ -69,7 +68,6 @@ class YoloDetectNode(Node):
             return False
 
         try:
-            # Optimización: Redimensionar imagen si es muy grande (ej. 4K a 640)
             bgr = self.bridge.imgmsg_to_cv2(self._last_image, desired_encoding="bgr8")
             
             # Inferencia
@@ -113,6 +111,18 @@ class YoloDetectNode(Node):
         res.success = True
         res.message = self._results_text
         return res
+    
+    def _handle_enable_continuous(self, req: SetBool.Request, res: SetBool.Response):
+        self.continuous = req.data
+        if self.continuous:
+            self.timer.reset()  # Reiniciar el timeri
+            self.get_logger().info("Continuous detection ENABLED")
+        else:
+            self.timer.cancel()  # Detener el timer de inferencia periódica
+            self.get_logger().info("Continuous detection DISABLED")
+        res.success = True
+        res.message = "Continuous mode " + ("enabled" if self.continuous else "disabled")
+        return res
 
     def _handle_get_bbox(self, req: GetBbox.Request, res: GetBbox.Response):
         """Versión optimizada que busca en la última detección guardada"""
@@ -141,8 +151,6 @@ class YoloDetectNode(Node):
 def main():
     rclpy.init()
     node = YoloDetectNode()
-    # Usar SingleThreaded es suficiente para YOLO si no publicamos muchas cosas pesadas,
-    # pero permite que el sistema de ROS gestione los tiempos.
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

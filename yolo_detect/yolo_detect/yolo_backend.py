@@ -1,8 +1,9 @@
+import os
+import numpy as np
+import cv2
 from ultralytics import YOLO
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-import numpy as np
-import cv2
 
 @dataclass
 class Detection:
@@ -11,14 +12,30 @@ class Detection:
     xyxy: Tuple[int, int, int, int]
 
 class YoloBackend:
-    def __init__(self, model_path: str, device: str = "cuda:0", conf_th: float = 0.5):
-        self.model = YOLO(model_path)
+    def __init__(self, model_name: str, device: str = "cuda", conf_th: float = 0.5):
+
+        base_path = os.path.expanduser("~/vision")
+        self.model_dir = os.path.join(base_path, "models")
+        full_model_path = os.path.join(self.model_dir, model_name)
+        self.model = YOLO(full_model_path) 
+
         self.device = device
         self.conf_th = float(conf_th)
+        self.model.to(self.device)
+        self.model.fuse()
+        self.model.predict(
+            np.zeros((640, 640, 3), dtype=np.uint8), 
+            device=self.device, verbose=False, half="cuda" in str(self.device))
 
     def infer(self, bgr: np.ndarray) -> List[Detection]:
+        
+        is_cuda = "cuda" in str(self.device)
         results = self.model.predict(
-            source=bgr, device=self.device, conf=self.conf_th, verbose=False
+            source=bgr, 
+            device=self.device, 
+            conf=self.conf_th, 
+            verbose=False,
+            half=is_cuda  # FP16 activo
         )
         if not results:
             return []
