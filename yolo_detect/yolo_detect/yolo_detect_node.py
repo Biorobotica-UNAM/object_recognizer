@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from vision_interfaces.srv import GetBbox
+from vision_interfaces.srv import GetBbox, GetDetections
 from vision_interfaces.msg import YoloDetection, YoloDetections
 from std_srvs.srv import Trigger, SetBool
 from yolo_detect.yolo_backend import YoloBackend
@@ -29,8 +29,8 @@ class YoloDetectNode(Node):
         device = self.get_parameter("device").value
         conf_th = self.get_parameter("conf_th").value
         image_topic = self.get_parameter("image_topic").value
-        self.continuous = self.get_parameter("enable_continuous").value
 
+        
         # 2. Inicialización de YOLO
         self.bridge = CvBridge()
         # Mantenemos el backend pero asegúrate de que use Half Precision (FP16) si es CUDA
@@ -53,9 +53,13 @@ class YoloDetectNode(Node):
         
         self.create_service(GetBbox, "get_bbox", self._handle_get_bbox)
         self.create_service(Trigger, "detection", self._handle_service_request)
+
+        self.create_service(GetDetections, "detection", self._handle_service_request)
         self.create_service(SetBool, "enable_continuous", self._handle_enable_continuous)
+        self.continuous = False
         time_period = 1.0 / 10.0  # 10 Hz
         self.timer = self.create_timer(time_period, self._do_inference)
+        self.timer.cancel()
 
         self.get_logger().info(f"YOLO OPTIMIZED: Model={model_name} en {device}")
 
@@ -106,6 +110,7 @@ class YoloDetectNode(Node):
             if not success:
                 res.success = False
                 res.message = "Inference failed or no image"
+                res.detections = self._latest_detections_msg.detections
                 return res
         
         res.success = True
