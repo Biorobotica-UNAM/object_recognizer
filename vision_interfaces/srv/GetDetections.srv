@@ -1,0 +1,5 @@
+# No request required
+---
+YoloDetection[] detections
+bool success
+string message

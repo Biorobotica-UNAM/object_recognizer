@@ -52,7 +52,7 @@ class YoloDetectNode(Node):
         self._detections_pub = self.create_publisher(YoloDetections, "detections_list", 10)
         
         self.create_service(GetBbox, "get_bbox", self._handle_get_bbox)
-        self.create_service(Trigger, "detection", self._handle_service_request)
+        ##self.create_service(Trigger, "detection", self._handle_service_request)
 
         self.create_service(GetDetections, "detection", self._handle_service_request)
         self.create_service(SetBool, "enable_continuous", self._handle_enable_continuous)
@@ -110,11 +110,12 @@ class YoloDetectNode(Node):
             if not success:
                 res.success = False
                 res.message = "Inference failed or no image"
-                res.detections = self._latest_detections_msg.detections
+                res.detections = []
                 return res
         
         res.success = True
         res.message = self._results_text
+        res.detections = self._latest_detections_msg.detections
         return res
     
     def _handle_enable_continuous(self, req: SetBool.Request, res: SetBool.Response):
