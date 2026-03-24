@@ -38,7 +38,7 @@ class YoloDetectNode(Node):
 
         # 3. QoS para imágenes 
         image_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             depth=1
         )
 
