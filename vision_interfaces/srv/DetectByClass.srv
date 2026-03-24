@@ -1,6 +1,0 @@
-string class_name
-string model
----
-bool success
-string message
-geometry_msgs/PoseStamped pose
