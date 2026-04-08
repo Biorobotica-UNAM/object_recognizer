@@ -1,0 +1,12 @@
+# basic ignores
+**/*.pyc
+__pycache__/**
+**/test
+
+build/
+install/
+log/
+weights/
+models/
+*.pt
+*.pth
