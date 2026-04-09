@@ -70,7 +70,7 @@ class YoloDetectNode(Node):
         """Método central de procesamiento para evitar duplicar código"""
         if self._last_image is None:
             return False
-
+        
         try:
             bgr = self.bridge.imgmsg_to_cv2(self._last_image, desired_encoding="bgr8")
             
@@ -105,6 +105,24 @@ class YoloDetectNode(Node):
     def _handle_service_request(self, req, res):
         """El servicio ahora es mucho más rápido porque puede devolver la última detección"""
         # Si no es continuo, procesamos justo ahora
+        request_time = self.get_clock().now()
+
+        max_wait = rclpy.duration.Duration(seconds=0.5)  # Esperamos hasta 0.5s por una imagen reciente
+        start_wait_time = self.get_clock().now()
+        fresh_image = False
+
+        while(self.get_clock().now() - start_wait_time).nanoseconds < max_wait * 1e9:
+            if self._last_image is not None:
+                img_time = rclpy.time.Time.from_msg(self._last_image.header.stamp)
+            if img_time.nanoseconds > request_time.nanoseconds:
+                fresh_image = True
+                break
+        
+        if not fresh_image:
+            res.success = False
+            res.message = "No recent image available for inference"
+            return res
+
         if not self.continuous:
             success = self._do_inference()
             if not success:
