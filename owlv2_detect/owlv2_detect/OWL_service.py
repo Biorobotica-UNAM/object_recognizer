@@ -7,7 +7,7 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, PointCloud2
 from geometry_msgs.msg import Pose, TransformStamped
 from vision_interfaces.srv import GetBbox 
-from vision_interfaces.msg import OwlDetection, OwlDetections 
+from vision_interfaces.msg import YoloDetection, YoloDetections
 import tf2_ros
 import cv2
 import numpy as np
@@ -20,7 +20,7 @@ CATEGORY = {
     "drinks": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
-    "tableware": ["coffee mug", "glass cup", "paper plate", "plastic bowl", "spoon", "fork", "knife"],
+    "cutlery": ["coffee mug", "glass cup", "paper plate", "plastic bowl", "spoon", "fork", "knife"],
     "containers": ["trash can", "backpack", "handbag", "suitcase", "box"],
 }
 
@@ -37,7 +37,7 @@ OBJECT_ALIASES = {
     "coffee mate": ["red bottle", "creamer bottle"],
     "sprite": ["green bottle", "soda can", "green can"],
     "pringles": ["chips can", "snack can", "potato chips can", "red can"],
-    "jelly": ["jelly jar", "jam jar", "glass jar", "red jar", "yellow box"],
+    "jelly": ["yellow box", "jelly jar", "jam jar", "glass jar", "red jar"],
 
 }
 
@@ -70,7 +70,7 @@ class OwlServer(Node):
         self.last_image = None
 
         self.debug_pub = self.create_publisher(Image, "/owl/detections", 10)
-        self.owl_pub = self.create_publisher(OwlDetections, "/owl/detections_list", 10)
+        self.owl_pub = self.create_publisher(YoloDetections, "/owl/detections_list", 10)
         
         self.create_subscription(Image, self.image_topic, self.cb_image, 10)
         self.create_subscription(PointCloud2, "/kinect/points", self.cb_points, 10)
@@ -172,7 +172,7 @@ class OwlServer(Node):
         # iou_threshold=0.3 significa que si dos cajas se enciman más del 30%, borra la de menor score
         keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.5)
 
-        detections_msg = OwlDetections()
+        detections_msg = YoloDetections()
         detections_msg.header = self.last_image.header
         
         # Variables para la respuesta del servicio
@@ -190,13 +190,13 @@ class OwlServer(Node):
             label_name = normalize_label(label_name)
             
 
-            detection = OwlDetection()
+            detection = YoloDetection()
             detection.class_name = str(label_name)
             detection.confidence = float(score)
-            detection.x1 = float(box[0])
-            detection.y1 = float(box[1])
-            detection.x2 = float(box[2])
-            detection.y2 = float(box[3])
+            detection.x_min = float(box[0])
+            detection.y_min = float(box[1])
+            detection.x_max = float(box[2])
+            detection.y_max = float(box[3])
             detections_msg.detections.append(detection)
             
             # Color: Azul para búsqueda específica, Verde para general
