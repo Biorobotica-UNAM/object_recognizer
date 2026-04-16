@@ -20,8 +20,11 @@ CATEGORY = {
     "drinks": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
-    "cutlery": ["coffee mug", "glass cup", "paper plate", "plastic bowl", "spoon", "fork", "knife"],
-    "containers": ["trash can", "backpack", "handbag", "suitcase", "box"],
+    "cuttlery": [ "plastic bowl", "fork", "knife"],
+    "containers": ["trash can", "backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
+    "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
+    "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
+    "boing": ["juice box","carton box"]
 }
 
 GENERAL_CLASSES = [
@@ -37,7 +40,8 @@ OBJECT_ALIASES = {
     "coffee mate": ["red bottle", "creamer bottle"],
     "sprite": ["green bottle", "soda can", "green can"],
     "pringles": ["chips can", "snack can", "potato chips can", "red can"],
-    "jelly": ["yellow box", "jelly jar", "jam jar", "glass jar", "red jar"],
+    "jello": ["yellow box", "jelly", "carton box"],
+    "spam": ["meat can", "spam can", "blue can"],
 
 }
 
@@ -54,10 +58,14 @@ class OwlServer(Node):
         super().__init__('owl_server')
 
 
-        self.declare_parameter("image_topic", "/kinect/image_raw")
+        self.declare_parameter("image_topic", "/output_camera/image_enhanced")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
+<<<<<<< HEAD
         self.declare_parameter("conf_threshold", 0.25)
         self.declare_parameter("bbox_to_pose_service", "bbox_to_pose")
+=======
+        self.declare_parameter("conf_threshold", 0.28)
+>>>>>>> 9b45306698ab320b7a325ffd217c3c2698f2abfc
 
         self.image_topic = self.get_parameter("image_topic").get_parameter_value().string_value
         self.model_path = self.get_parameter("model_path").get_parameter_value().string_value
@@ -67,13 +75,27 @@ class OwlServer(Node):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.bridge = CvBridge()
+<<<<<<< HEAD
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+=======
+        self.tf_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
+        self.last_cloud = None
+>>>>>>> 9b45306698ab320b7a325ffd217c3c2698f2abfc
         self.last_image = None
 
         self.debug_pub = self.create_publisher(Image, "/owl/detections", 10)
         self.owl_pub = self.create_publisher(YoloDetections, "/owl/detections_list", 10)
         
         self.create_subscription(Image, self.image_topic, self.cb_image, 10)
+<<<<<<< HEAD
+=======
+        self.create_subscription(
+            PointCloud2,
+            "/hardware/camera/points",
+            self.cb_points,
+            rclpy.qos.qos_profile_sensor_data
+        )
+>>>>>>> 9b45306698ab320b7a325ffd217c3c2698f2abfc
 
         self.bbox_client = self.create_client(BboxToPose, self.bbox_to_pose_service)
         while not self.bbox_client.wait_for_service(timeout_sec=1.0):
@@ -95,7 +117,61 @@ class OwlServer(Node):
 
     def cb_image(self, msg):
         self.last_image = msg
+<<<<<<< HEAD
     
+=======
+
+    def cb_points(self, msg):
+        self.last_cloud = msg
+
+    def compute_3d_from_bbox(self, pc, x1, y1, x2, y2):
+        try:
+            if isinstance(pc, dict):
+                if 'xyz' in pc:
+                    # El formato que tienes es un array (H, W, 3)
+                    xyz_map = pc['xyz']
+                    x_map = xyz_map[:, :, 0]
+                    y_map = xyz_map[:, :, 1]
+                    z_map = xyz_map[:, :, 2]
+                elif 'x' in pc:
+                    x_map, y_map, z_map = pc['x'], pc['y'], pc['z']
+                else:
+                    self.get_logger().error(f"Keys encontradas: {pc.keys()}. No se reconoce formato.")
+                    return None
+            else:
+                x_map, y_map, z_map = pc['x'], pc['y'], pc['z']
+
+            h, w = z_map.shape[:2]
+
+            # Centro del BBox
+            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+
+            # ROI de 10x10 píxeles alrededor del centro para mayor estabilidad
+            r = 5
+            y_idx, x_idx = np.ogrid[max(cy-r, 0):min(cy+r, h), 
+                                    max(cx-r, 0):min(cx+r, w)]
+
+            xs = x_map[y_idx, x_idx].flatten()
+            ys = y_map[y_idx, x_idx].flatten()
+            zs = z_map[y_idx, x_idx].flatten()
+
+            # Filtrar NaNs, ceros e infinitos
+            mask = np.isfinite(zs) & (zs > 0.1) & (zs < 10.0)
+            
+            if np.count_nonzero(mask) < 5:
+                return None
+
+            # Mediana para evitar ruidos de bordes
+            return (
+                float(np.median(xs[mask])),
+                float(np.median(ys[mask])),
+                float(np.median(zs[mask]))
+            )
+
+        except Exception as e:
+            self.get_logger().error(f"Error en compute_3d: {e}")
+            return None
+>>>>>>> 9b45306698ab320b7a325ffd217c3c2698f2abfc
     def callback(self, req, resp):
         query = req.class_name.strip().lower()
         
@@ -185,8 +261,53 @@ class OwlServer(Node):
             self.get_logger().error("BboxToPose service timeout")
             resp.success = False
 
+<<<<<<< HEAD
         # Debug visualization
         cv2.rectangle(cv_img, (resp.x1, resp.y1), (resp.x2, resp.y2), (0, 255, 0), 2)
+=======
+            # Publicar TF si hay nube de puntos
+            if self.last_cloud is None:
+                self.get_logger().warn("No point cloud received yet, TF not published")
+            else:
+                pc = ros2_numpy.numpify(self.last_cloud)
+
+                self.get_logger().info(f"pc type: {type(pc)}")
+                if isinstance(pc, dict):
+                    self.get_logger().info(f"pc keys: {list(pc.keys())}")
+                else:
+                    self.get_logger().info(f"pc dtype: {pc.dtype}")
+                    if hasattr(pc, "dtype") and pc.dtype.names is not None:
+                        self.get_logger().info(f"pc fields: {pc.dtype.names}")
+                res_3d = self.compute_3d_from_bbox(pc, bx1, by1, bx2, by2)
+
+                if res_3d is None:
+                    self.get_logger().warn("No valid 3D point from bbox, TF not published")
+                else:
+                    mx, my, mz = res_3d
+
+                    safe_query = (query if not is_general_view else "object").strip().lower().replace(" ", "_")
+
+                    t = TransformStamped()
+                    t.header.stamp = self.get_clock().now().to_msg()
+                    t.header.frame_id = self.last_cloud.header.frame_id
+                    t.child_frame_id = f"detected_{safe_query}"
+                    t.transform.translation.x = mx
+                    t.transform.translation.y = my
+                    t.transform.translation.z = mz
+                    t.transform.rotation.x = 0.0
+                    t.transform.rotation.y = 0.0
+                    t.transform.rotation.z = 0.0
+                    t.transform.rotation.w = 1.0
+
+                    self.tf_broadcaster.sendTransform(t)
+
+                    self.get_logger().info(
+                        f"Published static TF {t.child_frame_id} wrt {t.header.frame_id}: "
+                        f"x={mx:.3f}, y={my:.3f}, z={mz:.3f}"
+                    )
+
+        # Publicar imagen de debug con todas las cajas visibles
+>>>>>>> 9b45306698ab320b7a325ffd217c3c2698f2abfc
         debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
         self.debug_pub.publish(debug_msg)
 
