@@ -69,7 +69,7 @@ class OwlServer(Node):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.bridge = CvBridge()
-        self.tf_broadcaster = tf2_ros.TransformStaticBroadcaster(self)
+        self.tf_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
         self.last_cloud = None
         self.last_image = None
 
@@ -77,7 +77,12 @@ class OwlServer(Node):
         self.owl_pub = self.create_publisher(YoloDetections, "/owl/detections_list", 10)
         
         self.create_subscription(Image, self.image_topic, self.cb_image, 10)
-        self.create_subscription(PointCloud2, "/kinect/points", self.cb_points, 10)
+        self.create_subscription(
+            PointCloud2,
+            "/hardware/camera/points",
+            self.cb_points,
+            rclpy.qos.qos_profile_sensor_data
+        )
 
         self.get_logger().info(f"Loading OWLv2: {self.model_path}...")
         
@@ -101,27 +106,51 @@ class OwlServer(Node):
 
     def compute_3d_from_bbox(self, pc, x1, y1, x2, y2):
         try:
-            h, w = pc.shape[:2]
-            cx = int((x1 + x2) / 2)
-            cy = int((y1 + y2) / 2)
+            if isinstance(pc, dict):
+                if 'xyz' in pc:
+                    # El formato que tienes es un array (H, W, 3)
+                    xyz_map = pc['xyz']
+                    x_map = xyz_map[:, :, 0]
+                    y_map = xyz_map[:, :, 1]
+                    z_map = xyz_map[:, :, 2]
+                elif 'x' in pc:
+                    x_map, y_map, z_map = pc['x'], pc['y'], pc['z']
+                else:
+                    self.get_logger().error(f"Keys encontradas: {pc.keys()}. No se reconoce formato.")
+                    return None
+            else:
+                x_map, y_map, z_map = pc['x'], pc['y'], pc['z']
+
+            h, w = z_map.shape[:2]
+
+            # Centro del BBox
+            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+
+            # ROI de 10x10 píxeles alrededor del centro para mayor estabilidad
+            r = 5
+            y_idx, x_idx = np.ogrid[max(cy-r, 0):min(cy+r, h), 
+                                    max(cx-r, 0):min(cx+r, w)]
+
+            xs = x_map[y_idx, x_idx].flatten()
+            ys = y_map[y_idx, x_idx].flatten()
+            zs = z_map[y_idx, x_idx].flatten()
+
+            # Filtrar NaNs, ceros e infinitos
+            mask = np.isfinite(zs) & (zs > 0.1) & (zs < 10.0)
             
-            r = 7 # Radio de muestreo
-            x_min, x_max = max(cx-r, 0), min(cx+r, w-1)
-            y_min, y_max = max(cy-r, 0), min(cy+r, h-1)
+            if np.count_nonzero(mask) < 5:
+                return None
 
-            roi = pc[y_min:y_max, x_min:x_max]
-            xs = roi['x'].flatten()
-            ys = roi['y'].flatten()
-            zs = roi['z'].flatten()
+            # Mediana para evitar ruidos de bordes
+            return (
+                float(np.median(xs[mask])),
+                float(np.median(ys[mask])),
+                float(np.median(zs[mask]))
+            )
 
-            mask = np.isfinite(xs) & np.isfinite(ys) & np.isfinite(zs) & (zs > 0.1)
-            if np.count_nonzero(mask) < 5: return None
-
-            return float(np.median(xs[mask])), float(np.median(ys[mask])), float(np.median(zs[mask]))
         except Exception as e:
-            self.get_logger().warn(f"3D error: {e}")
+            self.get_logger().error(f"Error en compute_3d: {e}")
             return None
-    
     def callback(self, req, resp):
         query = req.class_name.strip().lower()
         
@@ -228,20 +257,45 @@ class OwlServer(Node):
             resp.success = True
 
             # Publicar TF si hay nube de puntos
-            if self.last_cloud is not None:
+            if self.last_cloud is None:
+                self.get_logger().warn("No point cloud received yet, TF not published")
+            else:
                 pc = ros2_numpy.numpify(self.last_cloud)
+
+                self.get_logger().info(f"pc type: {type(pc)}")
+                if isinstance(pc, dict):
+                    self.get_logger().info(f"pc keys: {list(pc.keys())}")
+                else:
+                    self.get_logger().info(f"pc dtype: {pc.dtype}")
+                    if hasattr(pc, "dtype") and pc.dtype.names is not None:
+                        self.get_logger().info(f"pc fields: {pc.dtype.names}")
                 res_3d = self.compute_3d_from_bbox(pc, bx1, by1, bx2, by2)
-                if res_3d:
+
+                if res_3d is None:
+                    self.get_logger().warn("No valid 3D point from bbox, TF not published")
+                else:
                     mx, my, mz = res_3d
+
+                    safe_query = (query if not is_general_view else "object").strip().lower().replace(" ", "_")
+
                     t = TransformStamped()
                     t.header.stamp = self.get_clock().now().to_msg()
                     t.header.frame_id = self.last_cloud.header.frame_id
-                    t.child_frame_id = f"detected_{query if not is_general_view else 'object'}"
+                    t.child_frame_id = f"detected_{safe_query}"
                     t.transform.translation.x = mx
                     t.transform.translation.y = my
                     t.transform.translation.z = mz
+                    t.transform.rotation.x = 0.0
+                    t.transform.rotation.y = 0.0
+                    t.transform.rotation.z = 0.0
                     t.transform.rotation.w = 1.0
+
                     self.tf_broadcaster.sendTransform(t)
+
+                    self.get_logger().info(
+                        f"Published static TF {t.child_frame_id} wrt {t.header.frame_id}: "
+                        f"x={mx:.3f}, y={my:.3f}, z={mz:.3f}"
+                    )
 
         # Publicar imagen de debug con todas las cajas visibles
         debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
