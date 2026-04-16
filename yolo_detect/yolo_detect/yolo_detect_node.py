@@ -111,9 +111,12 @@ class YoloDetectNode(Node):
         start_wait_time = self.get_clock().now()
         fresh_image = False
 
-        while(self.get_clock().now() - start_wait_time).nanoseconds < max_wait * 1e9:
-            if self._last_image is not None:
-                img_time = rclpy.time.Time.from_msg(self._last_image.header.stamp)
+        while (self.get_clock().now() - start_wait_time).nanoseconds < max_wait.nanoseconds:
+            if self._last_image is None:
+                continue
+
+            img_time = rclpy.time.Time.from_msg(self._last_image.header.stamp)
+
             if img_time.nanoseconds > request_time.nanoseconds:
                 fresh_image = True
                 break
