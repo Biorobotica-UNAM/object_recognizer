@@ -20,8 +20,11 @@ CATEGORY = {
     "drinks": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
-    "cutlery": ["coffee mug", "glass cup", "paper plate", "plastic bowl", "spoon", "fork", "knife"],
-    "containers": ["trash can", "backpack", "handbag", "suitcase", "box"],
+    "cuttlery": [ "plastic bowl", "fork", "knife"],
+    "containers": ["trash can", "backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
+    "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
+    "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
+    "boing": ["juice box","carton box"]
 }
 
 GENERAL_CLASSES = [
@@ -37,7 +40,8 @@ OBJECT_ALIASES = {
     "coffee mate": ["red bottle", "creamer bottle"],
     "sprite": ["green bottle", "soda can", "green can"],
     "pringles": ["chips can", "snack can", "potato chips can", "red can"],
-    "jelly": ["yellow box", "jelly jar", "jam jar", "glass jar", "red jar"],
+    "jello": ["yellow box", "jelly", "carton box"],
+    "spam": ["meat can", "spam can", "blue can"],
 
 }
 
@@ -54,9 +58,9 @@ class OwlServer(Node):
         super().__init__('owl_server')
 
 
-        self.declare_parameter("image_topic", "/kinect/image_raw")
+        self.declare_parameter("image_topic", "/output_camera/image_enhanced")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.25)
+        self.declare_parameter("conf_threshold", 0.28)
 
         self.image_topic = self.get_parameter("image_topic").get_parameter_value().string_value
         self.model_path = self.get_parameter("model_path").get_parameter_value().string_value
@@ -65,7 +69,7 @@ class OwlServer(Node):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.bridge = CvBridge()
-        self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+        self.tf_broadcaster = tf2_ros.TransformStaticBroadcaster(self)
         self.last_cloud = None
         self.last_image = None
 
