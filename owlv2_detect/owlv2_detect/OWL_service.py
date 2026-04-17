@@ -19,14 +19,14 @@ from transformers import Owlv2Processor, Owlv2ForObjectDetection
 import time
 
 CATEGORY = {
-    "drinks": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke"],
+    "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
     "cuttlery": ["plastic bowl", "fork", "knife"],
     "containers": ["trash can", "backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
-    "boing": ["juice box", "carton box"]
+    #"boing": ["juice box", "carton box"]
 }
 
 GENERAL_CLASSES = [
