@@ -19,7 +19,7 @@ from transformers import Owlv2Processor, Owlv2ForObjectDetection
 import time
 
 CATEGORY = {
-    "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "coke can", "milk bottle"],
+    "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "red can", "milk bottle"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
     "cuttlery": ["plastic bowl", "fork", "knife"],
