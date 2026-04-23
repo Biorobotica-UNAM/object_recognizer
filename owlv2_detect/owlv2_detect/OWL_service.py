@@ -44,10 +44,10 @@ class OwlServer(Node):
         super().__init__('owl_server')
 
         # --- Parámetros ---
-        self.declare_parameter("image_topic", "/output_camera/image_enhanced")
+        self.declare_parameter("image_topic", "/kinect/image_raw") #/output_camera/image_enhanced
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
         self.declare_parameter("conf_threshold", 0.20)
-        self.declare_parameter("bbox_to_pose_service", "/vision/bbox_to_pose")
+        self.declare_parameter("bbox_to_pose_service", "bbox_to_pose")
 
         self.image_topic = self.get_parameter("image_topic").get_parameter_value().string_value
         self.model_path = self.get_parameter("model_path").get_parameter_value().string_value
@@ -72,8 +72,11 @@ class OwlServer(Node):
         self.bbox_client = self.create_client(
             BboxToPose, self.bbox_to_pose_service, callback_group=self.cb_group)
         
-        while not self.bbox_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info(f'Esperando servicio {self.bbox_to_pose_service}...')
+        self.get_logger().info(f'Esperando servicio {self.bbox_to_pose_service}...')
+        if not self.bbox_client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error(f'SERVICIO {self.bbox_to_pose_service} NO ENCONTRADO tras 5s. El nodo continuará, pero fallará al detectar.')
+        else:
+            self.get_logger().info(f'Conexión exitosa con {self.bbox_to_pose_service}')
 
         # --- OWLv2 Model ---
         self.get_logger().info(f"Cargando OWLv2 en {self.device}...")    
@@ -104,7 +107,8 @@ class OwlServer(Node):
             self.get_logger().error("No hay imágenes de la cámara.")
             resp.success = False
             return resp
-
+        
+        current_header = self.last_image.header
         cv_img = self.bridge.imgmsg_to_cv2(self.last_image, "bgr8")
         img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         
@@ -131,8 +135,10 @@ class OwlServer(Node):
         resp.x1, resp.y1, resp.x2, resp.y2 = map(int, best_box)
         resp.confidence = float(best_score)
 
-        # 4. Llamada al servicio de Pose (BboxToPose)
+        resp.header = current_header
+
         pose_req = BboxToPose.Request()
+        pose_req.header = current_header
         pose_req.x1, pose_req.y1 = resp.x1, resp.y1
         pose_req.x2, pose_req.y2 = resp.x2, resp.y2
 
@@ -171,7 +177,9 @@ class OwlServer(Node):
         
         debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
         self.debug_pub.publish(debug_msg)
-
+        
+        resp.header = current_header
+        #self.get_logger().info(f"Enviando a C++ Stamp: {resp.header.stamp.sec}")
         return resp
 
 def main():
