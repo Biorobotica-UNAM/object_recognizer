@@ -17,7 +17,7 @@ using vision_interfaces::srv::BboxToPose;
 class PcBboxPoseNode : public rclcpp::Node {
 public:
   PcBboxPoseNode() : Node("pc_bbox_pose_node") {
-    declare_parameter<std::string>("cloud_topic", "/points");
+    declare_parameter<std::string>("cloud_topic", "kinect/points");
     declare_parameter<int>("buffer_size", 15);
     declare_parameter<double>("max_dt_sec", 0.08);
     declare_parameter<int>("sample_step", 3);
