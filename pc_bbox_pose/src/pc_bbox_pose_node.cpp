@@ -17,13 +17,13 @@ using vision_interfaces::srv::BboxToPose;
 class PcBboxPoseNode : public rclcpp::Node {
 public:
   PcBboxPoseNode() : Node("pc_bbox_pose_node") {
-    declare_parameter<std::string>("cloud_topic", "kinect/points");
+    declare_parameter<std::string>("pointcloud_topic", "/hardware/camera/points");
     declare_parameter<int>("buffer_size", 15);
     declare_parameter<double>("max_dt_sec", 0.08);
     declare_parameter<int>("sample_step", 3);
     declare_parameter<int>("min_valid", 20);
 
-    cloud_topic_ = get_parameter("cloud_topic").as_string();
+    cloud_topic_ = get_parameter("pointcloud_topic").as_string();
     buffer_size_ = get_parameter("buffer_size").as_int();
     max_dt_ = std::chrono::duration<double>(get_parameter("max_dt_sec").as_double());
     sample_step_ = get_parameter("sample_step").as_int();
