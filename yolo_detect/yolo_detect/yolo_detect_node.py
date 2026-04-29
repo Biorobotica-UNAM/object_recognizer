@@ -27,7 +27,7 @@ class YoloDetectNode(Node):
                 ("model_name", "yolo11m.pt"),
                 ("device", "cuda"),
                 ("conf_th", 0.5),
-                ("image_topic", "kinect/image_raw"),
+                ("image_topic", "/hardware/camera/image_raw"),
             ]
         )
 

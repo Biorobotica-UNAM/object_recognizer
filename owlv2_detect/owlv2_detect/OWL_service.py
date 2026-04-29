@@ -86,7 +86,7 @@ class OwlServer(Node):
         ).to(self.device).half().eval()
         
         # --- Service ---
-        self.srv = self.create_service(GetBbox, "/owl/Owlv2Service", self.callback, callback_group=self.cb_group)
+        self.srv = self.create_service(GetBbox, "owl/Owlv2Service", self.callback, callback_group=self.cb_group)
         
         self.get_logger().info("OWLv2 Server Listo.")
 
