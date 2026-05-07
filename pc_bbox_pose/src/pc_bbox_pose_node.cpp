@@ -2,6 +2,8 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <vision_interfaces/srv/bbox_to_pose.hpp>
+#include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #include <chrono>
 #include <deque>
@@ -77,33 +79,85 @@ private:
     int y1 = std::clamp((int)req->y1, 0, (int)cloud.height - 1);
     int y2 = std::clamp((int)req->y2, 0, (int)cloud.height - 1);
 
+    std::vector<Eigen::Vector3f> points;
     std::vector<float> xs, ys, zs;
 
-    for (int v = y1; v < y2; v += 3) {
-      for (int u = x1; u < x2; u += 3) {
+    for (int v = y1; v < y2; v += sample_step_) {
+      for (int u = x1; u < x2; u += sample_step_) {
         float x, y, z;
         if (readXYZ(cloud, u, v, x, y, z, ox, oy, oz)) {
+          points.push_back(Eigen::Vector3f(x, y, z));
           xs.push_back(x); ys.push_back(y); zs.push_back(z);
         }
       }
     }
 
-    if (xs.size() < 30) {
+    if (xs.size() < min_valid_) {
       res->success = false;
       RCLCPP_WARN(get_logger(), "PointCloud is not enough valid points (%zu)", xs.size());
       return;
     }
+    
+    // RANSAC RADIAL FILTER 
 
-    auto mx = median(xs);
-    auto my = median(ys);
-    auto mz = median(zs);
+    Eigen::Vector3f rough_center(median(xs), median(ys), median(zs));
+    std::vector<Eigen::Vector3f> inliers;
+
+    //filtro para eliminar fondo inecesario
+
+    const float radius_sq = 0.15f * 0.15f; // 0.15m radius
+    for (const auto& p : points) {
+      if ((p - rough_center).squaredNorm() < radius_sq) {
+        inliers.push_back(p);
+      }
+    }
+
+    if (inliers.size() < 10) {
+      RCLCPP_INFO(get_logger(), "Not enough inliers found after radial RANSAC (%zu)", inliers.size());
+      res->success = false;
+      return;
+    }
+
+    // PCA
+
+    Eigen::Vector3f centroid(0, 0, 0);
+    for (const auto& p : inliers) centroid += p;
+    centroid /= inliers.size();
+
+    Eigen::Matrix3f cov = Eigen::Matrix3f::Zero();
+    for (const auto& p : inliers) {
+      Eigen::Vector3f centered = p - centroid;
+      cov += centered * centered.transpose();
+
+    }
+
+    cov /= inliers.size() - 1;
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(cov);
+    Eigen::Vector3f major_axis = es.eigenvectors().col(2); // largest eigenvalue
+    Eigen::Vector3f minor_axis = es.eigenvectors().col(0); // smallest eigenvalue
+    Eigen::Vector3f mid_axis = major_axis.cross(minor_axis);
+
+    //contruccion de la matriz de rotacion a partir de los ejes
+
+    Eigen::Matrix3f rot;
+    rot <<major_axis, mid_axis, minor_axis;
+
+    // el eje z del PCA ve hacia la camara
+    if (rot(2, 2) < 0) rot = rot * -1.0f;
+    Eigen::Quaternionf q(rot);
+    q.normalize();
 
     geometry_msgs::msg::PoseStamped pose;
     pose.header = cloud.header;
-    pose.pose.position.x = mx;
-    pose.pose.position.y = my;
-    pose.pose.position.z = mz;
-    pose.pose.orientation.w = 1.0;
+    pose.pose.position.x = centroid.x();
+    pose.pose.position.y = centroid.y();
+    pose.pose.position.z = centroid.z();
+
+    pose.pose.orientation.x = q.x();
+    pose.pose.orientation.y = q.y();
+    pose.pose.orientation.z = q.z();
+    pose.pose.orientation.w = q.w();
 
     res->pose = pose;
     res->success = true;
