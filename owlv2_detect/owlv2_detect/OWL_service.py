@@ -13,8 +13,8 @@ import torch
 import torchvision
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
 from tf2_ros import TransformBroadcaster, TransformListener, Buffer
-import tf2_geometry_msgs
-from geometry_msgs.msg import TransformStamped
+import tf2_geometry_msgs # Importante: esto registra los métodos de transformación
+from geometry_msgs.msg import TransformStamped, PoseStamped
 
 CATEGORY = {
     "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "red can", "milk bottle"],
@@ -99,7 +99,7 @@ class OwlServer(Node):
         cv_img = self.last_cv_image.copy()
         header = self.last_header
 
-        # iferencia
+        # inferencia
         img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         inputs = self.processor(text=[final_queries], images=img_rgb, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -134,30 +134,31 @@ class OwlServer(Node):
                     
                     if result_3d.success:
                         try:
-                            transform = self.tf_buffer.lookup_transform(
-                                "base_link",
-                                 result_3d.pose.header.frame_id,
-                                 rclpy.time.Time(),
-                                 timeout=rclpy.duration.Duration(seconds=1.0)
-                            )
-                            pose_in_base = tf2_geometry_msgs.do_transform_pose(result_3d.pose, transform)
+                            # En Jazzy, esta es la forma 'god'
+                            pose_in_base = self.tf_buffer.transform(result_3d.pose, "base_link")
                             
                             t = TransformStamped()
+                            #t.header.stamp = header.stamp
                             t.header.stamp = self.get_clock().now().to_msg()
                             t.header.frame_id = "base_link"
-                            clean_name = d.class_name.replace(" ", "_")
-                            t.child_frame_id = f"OWL_{clean_name}"
+                            t.child_frame_id = f"OWL_{d.class_name.replace(' ', '_')}"
+                            #self.tf_broadcaster.sendTransform(t)
                             
-                            t.transform.translation.x = pose_in_base.pose.position.x
-                            t.transform.translation.y = pose_in_base.pose.position.y
-                            t.transform.translation.z = pose_in_base.pose.position.z
-                            t.transform.rotation = pose_in_base.pose.orientation
+                            # Acceso explícito a la estructura del mensaje PoseStamped
+                            t.transform.translation.x = float(pose_in_base.pose.position.x)
+                            t.transform.translation.y = float(pose_in_base.pose.position.y)
+                            t.transform.translation.z = float(pose_in_base.pose.position.z)
+                            
+                            t.transform.rotation.x = float(pose_in_base.pose.orientation.x)
+                            t.transform.rotation.y = float(pose_in_base.pose.orientation.y)
+                            t.transform.rotation.z = float(pose_in_base.pose.orientation.z)
+                            t.transform.rotation.w = float(pose_in_base.pose.orientation.w)
                         
                             self.tf_broadcaster.sendTransform(t)
                             self.get_logger().info(f"TF publicada: {t.child_frame_id}")
 
                         except Exception as e:
-                            self.get_logger().error(f"Error al transformar pose: {e}")
+                            self.get_logger().error(f"Error en transformación: {e}")
 
                 det_array.detections.append(d)
                 cv2.rectangle(cv_img, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
