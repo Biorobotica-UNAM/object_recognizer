@@ -105,7 +105,7 @@ private:
 
     //filtro para eliminar fondo inecesario
 
-    const float radius_sq = 0.15f * 0.15f; // 0.15m radius
+    const float radius_sq = 0.08f * 0.08f; // 0.08m radius
     for (const auto& p : points) {
       if ((p - rough_center).squaredNorm() < radius_sq) {
         inliers.push_back(p);
