@@ -12,9 +12,8 @@ import cv2
 import torch
 import torchvision
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
-
-# Librerías de TF corregidas
-from tf2_ros import StaticTransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster, TransformListener, Buffer
+import tf2_geometry_msgs
 from geometry_msgs.msg import TransformStamped
 
 CATEGORY = {
@@ -44,7 +43,7 @@ class OwlServer(Node):
         # --- Parámetros ---
         self.declare_parameter("image_topic", "/kinect/image_raw")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.32)
+        self.declare_parameter("conf_threshold", 0.28)
 
         self.topic_name = self.get_parameter("image_topic").get_parameter_value().string_value
         self.conf_th = self.get_parameter("conf_threshold").value
@@ -54,9 +53,10 @@ class OwlServer(Node):
         self.last_cv_image = None
         self.last_header = None
         self.cb_group = ReentrantCallbackGroup()
-
-        # --- TF Broadcaster Estático (Para que no parpadee en RViz) ---
         self.tf_broadcaster = StaticTransformBroadcaster(self)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
 
         # --- Modelo OWLv2 ---
         self.get_logger().info(f"Cargando OWLv2 en {self.device}...")
@@ -82,7 +82,7 @@ class OwlServer(Node):
         self.last_header = msg.header
 
     async def handle_analyze(self, req, resp):
-        # 1. Preparar queries
+
         raw_queries = req.queries if req.queries else ["object"]
         final_queries = []
         for q in raw_queries:
@@ -91,7 +91,6 @@ class OwlServer(Node):
             elif q_lower in ["all", "everything"]: final_queries.extend(GENERAL_CLASSES)
             else: final_queries.append(q_lower)
 
-        # 2. Validar imagen
         if self.last_cv_image is None:
             resp.success = False
             resp.message = "Error: No hay imagen disponible"
@@ -100,7 +99,7 @@ class OwlServer(Node):
         cv_img = self.last_cv_image.copy()
         header = self.last_header
 
-        # 3. Inferencia
+        # iferencia
         img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         inputs = self.processor(text=[final_queries], images=img_rgb, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -111,7 +110,7 @@ class OwlServer(Node):
             outputs, threshold=self.conf_th, target_sizes=target_sizes
         )[0]
 
-        # 4. Procesar resultados
+       
         if len(results["boxes"]) > 0:
             keep = torchvision.ops.nms(results["boxes"], results["scores"], iou_threshold=0.5)
             det_array = YoloDetections()
@@ -124,7 +123,7 @@ class OwlServer(Node):
                 d.confidence = float(results["scores"][idx].cpu().item())
                 d.x_min, d.y_min, d.x_max, d.y_max = map(float, box)
 
-                # --- Llamada 3D con margen de seguridad ---
+
                 if self.pose_client.service_is_ready():
                     pose_req = BboxToPose.Request()
                     m = 5 # Margen pequeño
@@ -134,27 +133,36 @@ class OwlServer(Node):
                     result_3d = await self.pose_client.call_async(pose_req)
                     
                     if result_3d.success:
-                        # PUBLICAR TF (Recuperando lógica funcional)
-                        t = TransformStamped()
-                        # Usamos el header que regresa C++ para asegurar frame_id y timestamp
-                        t.header = result_3d.pose.header
-                        clean_name = d.class_name.replace(" ", "_")
-                        t.child_frame_id = f"OWL_{clean_name}"
+                        try:
+                            transform = self.tf_buffer.lookup_transform(
+                                "base_link",
+                                 result_3d.pose.header.frame_id,
+                                 rclpy.time.Time()
+                            )
+                            pose_in_base = tf2_geometry_msgs.do_transform_pose(result_3d.pose, transform)
+                            
+                            t = TransformStamped()
+                            t.header.stamp = self.get_clock().now().to_msg()
+                            t.header.frame_id = "base_link"
+                            clean_name = d.class_name.replace(" ", "_")
+                            t.child_frame_id = f"OWL_{clean_name}"
+                            
+                            t.transform.translation.x = pose_in_base.pose.position.x
+                            t.transform.translation.y = pose_in_base.pose.position.y
+                            t.transform.translation.z = pose_in_base.pose.position.z
+                            t.transform.rotation = pose_in_base.pose.orientation
                         
-                        t.transform.translation.x = result_3d.pose.pose.position.x
-                        t.transform.translation.y = result_3d.pose.pose.position.y
-                        t.transform.translation.z = result_3d.pose.pose.position.z
-                        t.transform.rotation = result_3d.pose.pose.orientation
-                        
-                        self.tf_broadcaster.sendTransform(t)
-                        self.get_logger().info(f"TF publicada: {t.child_frame_id}")
+                            self.tf_broadcaster.sendTransform(t)
+                            self.get_logger().info(f"TF publicada: {t.child_frame_id}")
+
+                        except Exception as e:
+                            self.get_logger().error(f"Error al transformar pose: {e}")
 
                 det_array.detections.append(d)
                 cv2.rectangle(cv_img, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
                 cv2.putText(cv_img, f"OWL_{d.class_name}", (box[0], box[1]-10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            # Publicar debug y responder
             debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
             debug_msg.header = header
             self.debug_pub.publish(debug_msg)
