@@ -12,7 +12,7 @@ import cv2
 import torch
 import torchvision
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
-from tf2_ros import StaticTransformBroadcaster, TransformListener, Buffer
+from tf2_ros import TransformBroadcaster, TransformListener, Buffer
 import tf2_geometry_msgs
 from geometry_msgs.msg import TransformStamped
 
@@ -53,7 +53,7 @@ class OwlServer(Node):
         self.last_cv_image = None
         self.last_header = None
         self.cb_group = ReentrantCallbackGroup()
-        self.tf_broadcaster = StaticTransformBroadcaster(self)
+        self.tf_broadcaster = TransformBroadcaster(self)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -137,7 +137,8 @@ class OwlServer(Node):
                             transform = self.tf_buffer.lookup_transform(
                                 "base_link",
                                  result_3d.pose.header.frame_id,
-                                 rclpy.time.Time()
+                                 rclpy.time.Time(),
+                                 timeout=rclpy.duration.Duration(seconds=1.0)
                             )
                             pose_in_base = tf2_geometry_msgs.do_transform_pose(result_3d.pose, transform)
                             
