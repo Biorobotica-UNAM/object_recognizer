@@ -4,7 +4,6 @@
 #include <vision_interfaces/srv/bbox_to_pose.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
-
 #include <chrono>
 #include <deque>
 #include <algorithm>
@@ -12,6 +11,8 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+// STABLE VERSION 
 
 using sensor_msgs::msg::PointCloud2;
 using vision_interfaces::srv::BboxToPose;
@@ -112,21 +113,24 @@ private:
     cov /= inliers.size() - 1;
 
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(cov);
-    // Eje Z (Normal al objeto): Eigenvector con menor varianza
-    Eigen::Vector3f z_axis = es.eigenvectors().col(0); 
-    // Eje X (Largo del objeto): Eigenvector con mayor varianza
-    Eigen::Vector3f x_axis = es.eigenvectors().col(2); 
-
-    // Asegurar que el eje Z apunte hacia la cámara para que el gripper no llegue por "atrás"
-    if (z_axis.z() > 0) z_axis = -z_axis;
     
-    // Ortogonalizar
-    Eigen::Vector3f y_axis = z_axis.cross(x_axis);
-    x_axis = y_axis.cross(z_axis); 
+    // Análisis de verticalidad del eje mayor para seleccionar orientación
+    Eigen::Vector3f major_axis = es.eigenvectors().col(2);
+    // Componente vertical del eje mayor (dot con el eje Y) 
+    float vertical_component = std::abs(major_axis.dot(Eigen::Vector3f::UnitY()));
+    
+    Eigen::Quaternionf q;
 
-    Eigen::Matrix3f rot;
-    rot << x_axis, y_axis, z_axis;
-    Eigen::Quaternionf q(rot);
+    if (vertical_component > 0.707) {
+        // Forzamos agarre HORIZONTAL (-120 grados en Y)
+        q = Eigen::Quaternionf(0.5f, 0.0f, -0.8660254f, 0.0f);
+        RCLCPP_INFO(get_logger(), " VERTICAL OBJECT -> HORIZONTAL grasp (-120deg)");
+    } else {
+        // Forzamos agarre desde ARRIBA (-30 grados en Y)
+        q = Eigen::Quaternionf(0.9659258f, 0.0f, -0.258819f, 0.0f);
+        RCLCPP_INFO(get_logger(), " HORIZONTAL OBJECT -> TOP grasp (-30deg)");
+    }
+
     q.normalize();
 
     res->pose.header = cloud.header;

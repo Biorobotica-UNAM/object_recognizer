@@ -13,8 +13,10 @@ import torch
 import torchvision
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
 from tf2_ros import TransformBroadcaster, TransformListener, Buffer
-import tf2_geometry_msgs # Importante: esto registra los métodos de transformación
+import tf2_geometry_msgs 
 from geometry_msgs.msg import TransformStamped, PoseStamped
+
+# VERSION ESTABLE
 
 CATEGORY = {
     "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "red can", "milk bottle"],
@@ -52,6 +54,8 @@ class OwlServer(Node):
         
         self.last_cv_image = None
         self.last_header = None
+        self.last_tf = None
+        self.timer = self.create_timer(0.1, self.publish_last_tf)
         self.cb_group = ReentrantCallbackGroup()
         self.tf_broadcaster = TransformBroadcaster(self)
         self.tf_buffer = Buffer()
@@ -80,6 +84,11 @@ class OwlServer(Node):
     def cb_image(self, msg):
         self.last_cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         self.last_header = msg.header
+
+    def publish_last_tf(self):
+        if self.last_tf is not None:
+            self.last_tf.header.stamp = self.get_clock().now().to_msg()
+            self.tf_broadcaster.sendTransform(self.last_tf)
 
     async def handle_analyze(self, req, resp):
 
@@ -134,7 +143,6 @@ class OwlServer(Node):
                     
                     if result_3d.success:
                         try:
-                            # En Jazzy, esta es la forma 'god'
                             pose_in_base = self.tf_buffer.transform(result_3d.pose, "base_link")
                             
                             t = TransformStamped()
@@ -155,6 +163,7 @@ class OwlServer(Node):
                             t.transform.rotation.w = float(pose_in_base.pose.orientation.w)
                         
                             self.tf_broadcaster.sendTransform(t)
+                            self.last_tf = t  # Guardamos para re-publicar periódicamente
                             self.get_logger().info(f"TF publicada: {t.child_frame_id}")
 
                         except Exception as e:
