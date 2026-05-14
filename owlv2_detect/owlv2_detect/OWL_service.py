@@ -121,14 +121,26 @@ class OwlServer(Node):
 
        
         if len(results["boxes"]) > 0:
-            keep = torchvision.ops.nms(results["boxes"], results["scores"], iou_threshold=0.5)
+            keep = torchvision.ops.nms(results["boxes"], results["scores"], iou_threshold=0.3)
             det_array = YoloDetections()
             det_array.header = header
 
+            class_counter = {} #add1
+
             for idx in keep:
                 box = results["boxes"][idx].int().cpu().numpy()
+                raw_class_name = final_queries[results["labels"][idx]]
+                class_name = raw_class_name.replace(" ", "_")
+
+                if class_name not in class_counter:
+                    class_counter[class_name] = 0
+                else:
+                    class_counter[class_name] += 1
+                
+                instance_id = class_counter[class_name]  # ID incremental por clase
+
                 d = YoloDetection()
-                d.class_name = final_queries[results["labels"][idx]]
+                d.class_name = raw_class_name
                 d.confidence = float(results["scores"][idx].cpu().item())
                 d.x_min, d.y_min, d.x_max, d.y_max = map(float, box)
 
@@ -149,7 +161,7 @@ class OwlServer(Node):
                             #t.header.stamp = header.stamp
                             t.header.stamp = self.get_clock().now().to_msg()
                             t.header.frame_id = "base_link"
-                            t.child_frame_id = f"OWL_{d.class_name.replace(' ', '_')}"
+                            t.child_frame_id = f"OWL_{class_name}_{instance_id}"
                             #self.tf_broadcaster.sendTransform(t)
                             
                             # Acceso explícito a la estructura del mensaje PoseStamped
@@ -171,7 +183,7 @@ class OwlServer(Node):
 
                 det_array.detections.append(d)
                 cv2.rectangle(cv_img, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
-                cv2.putText(cv_img, f"OWL_{d.class_name}", (box[0], box[1]-10), 
+                cv2.putText(cv_img, f"OWL_{d.class_name}_{instance_id}", (box[0], box[1]-10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")

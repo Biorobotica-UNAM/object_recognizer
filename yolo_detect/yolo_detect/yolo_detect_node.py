@@ -8,26 +8,24 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import TransformStamped
-import torch
 import tf2_ros
-import time
-from vision_interfaces.srv import GetBbox, GetDetections, BboxToPose
+from vision_interfaces.srv import GetDetections, BboxToPose
 from vision_interfaces.msg import YoloDetection, YoloDetections
-from std_srvs.srv import Trigger, SetBool
+from std_srvs.srv import SetBool
 from yolo_detect.yolo_backend import YoloBackend
 
 class YoloDetectNode(Node):
     def __init__(self):
         super().__init__("yolo_detect_node")
 
-        # 1. Parámetros
+        #  Parámetros
         self.declare_parameters(
             namespace='',
             parameters=[
                 ("model_name", "yolo11m.pt"),
                 ("device", "cuda"),
                 ("conf_th", 0.5),
-                ("image_topic", "/hardware/camera/image_raw"),
+                ("image_topic", "/kinect/image_raw"),
             ]
         )
 
@@ -44,16 +42,14 @@ class YoloDetectNode(Node):
 
         self.cb_group = ReentrantCallbackGroup()
         
-        # --- CORRECCIÓN 1: Broadcaster Dinámico y Target Class inicializado ---
-        self.tf_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
-        self.target_class = None 
-        # ---------------------------------------------------------------------
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster(self) 
+        self._current_queries = []
 
         self._last_image = None
         self._latest_detections_msg = YoloDetections()
         self._results_text = "No detections yet"
 
-        # 3. QoS y Comunicaciones
+        #  Subs, Pubs y Clientes
         image_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=1)
         self.create_subscription(Image, image_topic, self._img_cb, image_qos, callback_group=self.cb_group)
         self._detections_pub = self.create_publisher(YoloDetections, "detections_list", 10)
@@ -61,7 +57,7 @@ class YoloDetectNode(Node):
         self.bbox_client = self.create_client(
             BboxToPose, self.bbox_to_pose_service, callback_group=self.cb_group)
         
-        self.create_service(GetBbox, "get_bbox", self._handle_get_bbox, callback_group=self.cb_group)
+        # Servicios
         self.create_service(GetDetections, "detection", self._handle_service_request, callback_group=self.cb_group)
         self.create_service(SetBool, "enable_continuous", self._handle_enable_continuous, callback_group=self.cb_group)
         
@@ -70,7 +66,7 @@ class YoloDetectNode(Node):
         self.timer = self.create_timer(time_period, self._do_inference, callback_group=self.cb_group)
         self.timer.cancel()
 
-        self.get_logger().info(f"YOLO OPTIMIZED: Model={model_name} en {device} on {image_topic}")
+        self.get_logger().info(f"YOLO NODE: {model_name} en {device} escuchando {image_topic}")
 
     def _img_cb(self, msg: Image):
         self._last_image = msg
@@ -80,7 +76,6 @@ class YoloDetectNode(Node):
             return False
         
         try:
-            # --- CORRECCIÓN 2: Asegurar el header de la imagen para el mensaje ---
             img_header = self._last_image.header
             bgr = self.bridge.imgmsg_to_cv2(self._last_image, desired_encoding="bgr8")
             
@@ -100,8 +95,7 @@ class YoloDetectNode(Node):
                 msg.detections.append(det_msg)
                 text_results.append(f"{d.class_name} ({d.conf:.2f})")
 
-                # Filtro Target Class (solo pide Pose y publica TF si coincide)
-                if self.target_class is not None and d.class_name == self.target_class:
+                if d.class_name in self._current_queries:
                     if self.bbox_client.service_is_ready():
                         req = BboxToPose.Request()
                         req.header = img_header
@@ -134,35 +128,39 @@ class YoloDetectNode(Node):
                 t.transform.translation.z = response.pose.pose.position.z
                 t.transform.rotation = response.pose.pose.orientation
                 self.tf_broadcaster.sendTransform(t)
-            else:
-                self.get_logger().warn(f"No se pudo obtener profundidad para {class_name}", throttle_duration_sec=2.0)
         except Exception as e:
             self.get_logger().error(f"Error en callback de pose: {e}")
 
-    def _handle_service_request(self, req, res):
-        request_time = self.get_clock().now()
-        max_wait = rclpy.duration.Duration(seconds=0.5)
-        start_wait_time = self.get_clock().now()
-        fresh_image = False
-
-        while (self.get_clock().now() - start_wait_time).nanoseconds < max_wait.nanoseconds:
-            if self._last_image is None: continue
-            img_time = rclpy.time.Time.from_msg(self._last_image.header.stamp)
-            if img_time.nanoseconds > request_time.nanoseconds:
-                fresh_image = True
-                break
-        
-        if not fresh_image and not self.continuous:
+    def _handle_service_request(self, req: GetDetections.Request, res: GetDetections.Response):
+        if self._last_image is None:
             res.success = False
-            res.message = "No recent image available"
+            res.message = "No image received yet from topic"
             return res
 
-        if not self.continuous:
-            self._do_inference()
+        # Actualizamos las queries para que _do_inference sepa a qué sacarle pose
+        self._current_queries = req.queries
+
+        try:
+            if not self.continuous:
+                self._do_inference()
+            
+            found = []
+            for d in self._latest_detections_msg.detections:
+                if d.class_name in req.queries:
+                    found.append(d)
+            
+            res.detections = found
+            res.success = len(found) > 0
+            
+            if res.success:
+                res.message = f"Detected {len(found)} objects"
+            else:
+                res.message = f"Nothing found. YOLO sees: {self._results_text}"
         
-        res.success = True
-        res.message = self._results_text
-        res.detections = self._latest_detections_msg.detections
+        except Exception as e:
+            res.success = False
+            res.message = f"Inference error: {str(e)}"
+        
         return res
     
     def _handle_enable_continuous(self, req: SetBool.Request, res: SetBool.Response):
@@ -172,44 +170,10 @@ class YoloDetectNode(Node):
             self.get_logger().info("Continuous detection ENABLED")
         else:
             self.timer.cancel()
-            self.target_class = None
+            self._current_queries = [] # Limpiamos queries al apagar
             self.get_logger().info("Continuous detection DISABLED")
         res.success = True
         res.message = f"Continuous mode {'enabled' if self.continuous else 'disabled'}"
-        return res
-
-    def _handle_get_bbox(self, req: GetBbox.Request, res: GetBbox.Response):
-        self.target_class = req.class_name 
-        self.get_logger().info(f"Received request for class: '{req.class_name}'")
-        
-        if not self.continuous:
-            self._do_inference()
-
-        # --- CORRECCIÓN 3: Protección de Header para el nodo C++ ---
-        if self._latest_detections_msg.header.stamp.sec == 0:
-            res.header.stamp = self.get_clock().now().to_msg()
-            res.header.frame_id = "kinect_link" # O tu frame_id real
-        else:
-            res.header = self._latest_detections_msg.header
-        # -----------------------------------------------------------
-
-        best = None
-        max_conf = -1.0
-        for d in self._latest_detections_msg.detections:
-            if d.class_name == req.class_name and d.confidence > max_conf:
-                best = d
-                max_conf = d.confidence
-
-        if best:
-            res.success = True
-            res.x1, res.y1 = int(best.x_min), int(best.y_min)
-            res.x2, res.y2 = int(best.x_max), int(best.y_max)
-            res.confidence = best.confidence
-            res.detected_class = best.class_name
-            self.get_logger().info(f"SUCCESS: Found '{req.class_name}'")
-        else:
-            res.success = False
-            self.get_logger().warn(f"FAILED: '{req.class_name}' not found")
         return res
 
 def main():
