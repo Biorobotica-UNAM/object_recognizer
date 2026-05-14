@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'owlv2_node = owlv2_detect.OWL_service:main',
+            'Analize_node = owlv2_detect.Analize_node:main',
         ],
     },
 )
