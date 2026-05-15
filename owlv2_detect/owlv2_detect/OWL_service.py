@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 
+import threading  # FIX: thread safety
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -8,6 +9,7 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from vision_interfaces.srv import GetDetections, BboxToPose
 from vision_interfaces.msg import YoloDetection, YoloDetections
+from geometry_msgs.msg import Quaternion
 import cv2
 import torch
 import torchvision
@@ -45,7 +47,7 @@ class OwlServer(Node):
         # --- Parámetros ---
         self.declare_parameter("image_topic", "/kinect/image_raw")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.28)
+        self.declare_parameter("conf_threshold", 0.32)
 
         self.topic_name = self.get_parameter("image_topic").get_parameter_value().string_value
         self.conf_th = self.get_parameter("conf_threshold").value
@@ -54,7 +56,8 @@ class OwlServer(Node):
         
         self.last_cv_image = None
         self.last_header = None
-        self.last_tf = None
+        self._img_lock = threading.Lock()           # lock para thread safety
+        self.last_tfs = {}                       
         self.timer = self.create_timer(0.1, self.publish_last_tf)
         self.cb_group = ReentrantCallbackGroup()
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -67,7 +70,11 @@ class OwlServer(Node):
         self.processor = Owlv2Processor.from_pretrained(self.get_parameter("model_path").value)
         self.model = Owlv2ForObjectDetection.from_pretrained(
             self.get_parameter("model_path").value
-        ).to(self.device).half().eval()
+        ).to(self.device)                          
+        
+        if self.device == "cuda":
+            self.model = self.model.half()
+        self.model.eval()
 
         # --- Clientes y Pubs ---
         self.pose_client = self.create_client(BboxToPose, "bbox_to_pose", callback_group=self.cb_group)
@@ -82,13 +89,14 @@ class OwlServer(Node):
         self.get_logger().info(f"OWLv2 operativo. Escuchando {self.topic_name}")
 
     def cb_image(self, msg):
-        self.last_cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        self.last_header = msg.header
+        with self._img_lock:                        
+            self.last_cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            self.last_header = msg.header
 
     def publish_last_tf(self):
-        if self.last_tf is not None:
-            self.last_tf.header.stamp = self.get_clock().now().to_msg()
-            self.tf_broadcaster.sendTransform(self.last_tf)
+        for t in self.last_tfs.values():         
+            t.header.stamp = self.get_clock().now().to_msg()
+            self.tf_broadcaster.sendTransform(t)
 
     async def handle_analyze(self, req, resp):
 
@@ -100,13 +108,13 @@ class OwlServer(Node):
             elif q_lower in ["all", "everything"]: final_queries.extend(GENERAL_CLASSES)
             else: final_queries.append(q_lower)
 
-        if self.last_cv_image is None:
-            resp.success = False
-            resp.message = "Error: No hay imagen disponible"
-            return resp
-
-        cv_img = self.last_cv_image.copy()
-        header = self.last_header
+        with self._img_lock:
+            if self.last_cv_image is None:
+                resp.success = False
+                resp.message = "Error: No hay imagen disponible"
+                return resp
+            cv_img = self.last_cv_image.copy()
+            header = self.last_header
 
         # inferencia
         img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
@@ -125,7 +133,7 @@ class OwlServer(Node):
             det_array = YoloDetections()
             det_array.header = header
 
-            class_counter = {} #add1
+            class_counter = {}
 
             for idx in keep:
                 box = results["boxes"][idx].int().cpu().numpy()
@@ -137,7 +145,7 @@ class OwlServer(Node):
                 else:
                     class_counter[class_name] += 1
                 
-                instance_id = class_counter[class_name]  # ID incremental por clase
+                instance_id = class_counter[class_name]
 
                 d = YoloDetection()
                 d.class_name = raw_class_name
@@ -147,7 +155,7 @@ class OwlServer(Node):
 
                 if self.pose_client.service_is_ready():
                     pose_req = BboxToPose.Request()
-                    m = 5 # Margen pequeño
+                    m = 5
                     pose_req.x1, pose_req.y1 = int(max(0, box[0]-m)), int(max(0, box[1]-m))
                     pose_req.x2, pose_req.y2 = int(box[2]+m), int(box[3]+m)
                     
@@ -156,26 +164,32 @@ class OwlServer(Node):
                     if result_3d.success:
                         try:
                             pose_in_base = self.tf_buffer.transform(result_3d.pose, "base_link")
-                            
+
+                            # orientation.x == 1.0 → objeto vertical → agarre horizontal (-120° en Y)
+                            # orientation.x == 0.0 → objeto horizontal → agarre top (-30° en Y)
+                            is_vertical = (result_3d.pose.pose.orientation.x > 0.5)
+
+                            q = Quaternion()
+                            if is_vertical:
+                                q.w, q.x, q.y, q.z = 0.5, 0.0, -0.8660254, 0.0
+                                self.get_logger().info(f"OWL_{class_name}_{instance_id}: VERTICAL -> agarre horizontal -120°")
+                            else:
+                                q.w, q.x, q.y, q.z = 0.9659258, 0.0, -0.258819, 0.0
+                                self.get_logger().info(f"OWL_{class_name}_{instance_id}: HORIZONTAL -> agarre top -30°")
+
                             t = TransformStamped()
-                            #t.header.stamp = header.stamp
                             t.header.stamp = self.get_clock().now().to_msg()
                             t.header.frame_id = "base_link"
                             t.child_frame_id = f"OWL_{class_name}_{instance_id}"
-                            #self.tf_broadcaster.sendTransform(t)
-                            
-                            # Acceso explícito a la estructura del mensaje PoseStamped
+
                             t.transform.translation.x = float(pose_in_base.pose.position.x)
                             t.transform.translation.y = float(pose_in_base.pose.position.y)
                             t.transform.translation.z = float(pose_in_base.pose.position.z)
-                            
-                            t.transform.rotation.x = float(pose_in_base.pose.orientation.x)
-                            t.transform.rotation.y = float(pose_in_base.pose.orientation.y)
-                            t.transform.rotation.z = float(pose_in_base.pose.orientation.z)
-                            t.transform.rotation.w = float(pose_in_base.pose.orientation.w)
+
+                            t.transform.rotation = q
                         
                             self.tf_broadcaster.sendTransform(t)
-                            self.last_tf = t  # Guardamos para re-publicar periódicamente
+                            self.last_tfs[t.child_frame_id] = t
                             self.get_logger().info(f"TF publicada: {t.child_frame_id}")
 
                         except Exception as e:
