@@ -28,7 +28,9 @@ CATEGORY = {
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
-    "tableware": ["red plate","mug", "cup"],
+    "tableware_1": ["red plate","mug", "cup"],
+    "tableware_2": [" red bowl","glass cup ", "plastic mug"]
+
 }
 
 GENERAL_CLASSES = [
