@@ -24,11 +24,11 @@ CATEGORY = {
     "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "red can", "milk bottle"],
     "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
-    "cuttlery": ["plastic bowl", "fork", "knife"],
+    "cutlery": ["spoon", "fork", "knife", "chopsticks", "metal spoon", "plastic fork"],
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
-    "tableware_1": ["red plate","mug", "cup"],
+    "tableware_1": ["red plate","mug", "cup","bowl", "plastic bowl"],
     "tableware_2": [" red bowl","glass cup ", "plastic mug"]
 
 }

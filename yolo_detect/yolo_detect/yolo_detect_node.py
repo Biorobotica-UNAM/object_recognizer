@@ -25,7 +25,7 @@ class YoloDetectNode(Node):
                 ("model_name", "yolo11m.pt"),
                 ("device", "cuda"),
                 ("conf_th", 0.5),
-                ("image_topic", "/kinect/image_raw"),
+                ("image_topic", "hardware/camera/image_raw"),
             ]
         )
 
@@ -52,6 +52,12 @@ class YoloDetectNode(Node):
         #  Subs, Pubs y Clientes
         image_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=1)
         self.create_subscription(Image, image_topic, self._img_cb, image_qos, callback_group=self.cb_group)
+
+        from std_msgs.msg import Bool as BoolMsg
+        self.create_subscription(BoolMsg, 'enable_continuous',
+                                 self._enable_topic_cb, 10,
+                                 callback_group=self.cb_group)
+
         self._detections_pub = self.create_publisher(YoloDetections, "detections_list", 10)
 
         self.bbox_client = self.create_client(
@@ -164,17 +170,25 @@ class YoloDetectNode(Node):
         return res
     
     def _handle_enable_continuous(self, req: SetBool.Request, res: SetBool.Response):
-        self.continuous = req.data
-        if self.continuous:
-            self.timer.reset()
-            self.get_logger().info("Continuous detection ENABLED")
-        else:
-            self.timer.cancel()
-            self._current_queries = [] # Limpiamos queries al apagar
-            self.get_logger().info("Continuous detection DISABLED")
+        self._apply_enable(req.data)
         res.success = True
         res.message = f"Continuous mode {'enabled' if self.continuous else 'disabled'}"
         return res
+
+    # [FIX] Callback del subscriber Bool — misma lógica que el servicio
+    def _enable_topic_cb(self, msg):
+        self._apply_enable(msg.data)
+
+    def _apply_enable(self, enable: bool):
+        """Lógica de enable/disable unificada para servicio y subscriber."""
+        self.continuous = enable
+        if self.continuous:
+            self.timer.reset()
+            self.get_logger().info("Continuous detection ENABLED (via topic)")
+        else:
+            self.timer.cancel()
+            self._current_queries = []
+            self.get_logger().info("Continuous detection DISABLED (via topic)")
 
 def main():
     rclpy.init()
