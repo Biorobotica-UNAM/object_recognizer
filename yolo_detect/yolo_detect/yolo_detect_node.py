@@ -25,7 +25,7 @@ class YoloDetectNode(Node):
                 ("model_name", "yolo11m.pt"),
                 ("device", "cuda"),
                 ("conf_th", 0.5),
-                ("image_topic", "hardware/camera/image_raw"),
+                ("image_topic", "hardware/camera/image_raw"), #"hardware/camera/image_raw"
             ]
         )
 
@@ -54,7 +54,7 @@ class YoloDetectNode(Node):
         self.create_subscription(Image, image_topic, self._img_cb, image_qos, callback_group=self.cb_group)
 
         from std_msgs.msg import Bool as BoolMsg
-        self.create_subscription(BoolMsg, 'enable_continuous',
+        self.create_subscription(BoolMsg, '/vision/enable_continuous',
                                  self._enable_topic_cb, 10,
                                  callback_group=self.cb_group)
 
@@ -128,7 +128,7 @@ class YoloDetectNode(Node):
             if response.success:
                 t = TransformStamped()
                 t.header = response.pose.header
-                t.child_frame_id = f"yolo_{class_name}"
+                t.child_frame_id = f"OWL_{class_name}_0"
                 t.transform.translation.x = response.pose.pose.position.x
                 t.transform.translation.y = response.pose.pose.position.y
                 t.transform.translation.z = response.pose.pose.position.z
