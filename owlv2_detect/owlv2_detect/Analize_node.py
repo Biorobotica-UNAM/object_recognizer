@@ -48,15 +48,15 @@ class VisionAnalyticService(Node):
 
         if action == "count":
             return await self.handle_count(request, response)
-        elif action == "size":
+        elif action in ("size", "get_by_size"):
             return await self.handle_size(request, response)
-        elif action == "color":
+        elif action in ("color", "get_by_color"):
             return await self.handle_color(request, response)
-        elif action == "compare":
+        elif action in ("compare", "compare_count"):
             return await self.handle_compare(request, response)
         else:
             response.success = False
-            response.message = f"Action '{action}' invalid. Use: count | size | color | compare."
+            response.message = f"Action '{action}' invalid. Use: count | get_by_size | get_by_color | compare_count."
             self.get_logger().error(response.message)
             return response
 
@@ -69,7 +69,6 @@ class VisionAnalyticService(Node):
         return client.service_is_ready()
 
     async def _call_owl(self, queries: list):
-     
         if not self._check_service(self.owl_client):
             self.get_logger().error("OWLv2 service offline.")
             return False
@@ -103,7 +102,7 @@ class VisionAnalyticService(Node):
             if iou > max_iou:
                 max_iou, best_id = iou, obj_id
         return best_id
-    
+
     def _process_detections(self, target_class: str = "", reset_count: bool = False):
         if reset_count:
             self.cumulative_count = 0
@@ -141,9 +140,6 @@ class VisionAnalyticService(Node):
         target_only.sort(key=lambda x: x['area'], reverse=True)
         return all_processed, target_only
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Handler 1: contar objetos
-    # ─────────────────────────────────────────────────────────────────────────
     async def handle_count(self, request, response):
         target = request.target_class.strip().lower()
 
@@ -162,9 +158,6 @@ class VisionAnalyticService(Node):
         self.get_logger().info(response.message)
         return response
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Handler 2: obtener por tamaño
-    # ─────────────────────────────────────────────────────────────────────────
     async def handle_size(self, request, response):
         mode   = request.filter_mode.strip().lower()
         target = request.target_class.strip().lower()
@@ -195,9 +188,6 @@ class VisionAnalyticService(Node):
         self.get_logger().info(response.message)
         return response
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Handler 3: obtener por color
-    # ─────────────────────────────────────────────────────────────────────────
     async def handle_color(self, request, response):
         color  = request.color.strip().lower()
         target = request.target_class.strip().lower()
@@ -230,9 +220,6 @@ class VisionAnalyticService(Node):
         self.get_logger().info(response.message)
         return response
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Handler 4: comparar conteos entre múltiples clases
-    # ─────────────────────────────────────────────────────────────────────────
     async def handle_compare(self, request, response):
         classes = [c.strip().lower() for c in request.compare_classes if c.strip()]
 
@@ -241,7 +228,6 @@ class VisionAnalyticService(Node):
             response.message = "Need at least 2 classes to compare."
             return response
 
-        # Llama OWL con todas las clases en una sola llamada
         if not await self._call_owl(classes):
             response.success = False
             response.message = f"OWLv2 found no detections for {classes}."
