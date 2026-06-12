@@ -26,6 +26,8 @@ CATEGORY = {
     "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
     "cutlery": ["spoon", "fork", "knife", "chopsticks", "metal spoon", "plastic fork"],
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
+    # container_drop_tf_node .
+    "container_drop": ["bucket", "red bucket", "trash can", "waste basket", "plastic bin", "container", "open container", "storage bin", "box", "basket"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
     "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"]
