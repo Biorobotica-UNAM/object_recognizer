@@ -22,7 +22,7 @@ class YoloDetectNode(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ("model_name", "yolo11m.pt"),
+                ("model_name", "yolo11s.pt"),
                 ("device", "cuda"),
                 ("conf_th", 0.5),
                 ("image_topic", "hardware/camera/image_raw"),
