@@ -328,9 +328,9 @@ private:
 			else
 			{
 				pose_target.pose.orientation.x = 0.0;
-				pose_target.pose.orientation.y = 0.0;
+				pose_target.pose.orientation.y = -0.3826834;
 				pose_target.pose.orientation.z = 0.0;
-				pose_target.pose.orientation.w = 1.0;
+				pose_target.pose.orientation.w = 0.9238795;
 			}
 
             res->pose =
