@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 
-import threading  # FIX: thread safety
+import threading
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -170,7 +170,7 @@ class OwlServer(Node):
 
                             # orientation.x == 1.0 → objeto vertical → agarre horizontal (-120° en Y)
                             # orientation.x == 0.0 → objeto horizontal → agarre top (-30° en Y)
-                            is_vertical = (result_3d.pose.pose.orientation.x > 0.5)
+                            is_vertical = (result_3d.pose.pose.orientation.y < -0.5)
 
                             q = Quaternion()
                             if is_vertical:

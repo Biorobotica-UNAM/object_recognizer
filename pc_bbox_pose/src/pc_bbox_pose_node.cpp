@@ -38,8 +38,9 @@ public:
             "target_frame",
             "base_link");
 
-        declare_parameter<int>("sample_step", 3);
+        declare_parameter<int>("sample_step", 1);
         declare_parameter<int>("min_valid", 20);
+        declare_parameter<double>("depth_offset_m", 0.0);
 
         cloud_topic_ =
             get_parameter("pointcloud_topic").as_string();
@@ -202,7 +203,7 @@ private:
 
         for (const auto& p : points)
         {
-            if (std::abs(p.z() - med_z) < 0.08f)
+            if (std::abs(p.z() - med_z) < 0.15f) //0.08f-0.15f porque el kineckt tiene ruido aprox de 2-3cm 
             {
                 inliers.push_back(p);
             }
@@ -229,33 +230,46 @@ private:
         centroid /= static_cast<float>(inliers.size());
 
         // PCA
-        Eigen::Matrix3f cov =
-            Eigen::Matrix3f::Zero();
 
-        for (const auto& p : inliers)
-        {
-            Eigen::Vector3f centered =
-                p - centroid;
+        float bbox_h = static_cast<float>(req->y2 - req->y1);
+        float bbox_w = static_cast<float>(req->x2 - req->x1);
+        bool is_vertical = (bbox_h / (bbox_w + 1e-3f)) > 1.4f;
 
-            cov +=
-                centered *
-                centered.transpose();
-        }
+        RCLCPP_INFO(
+            get_logger(),
+            "bbox aspect h/w=%.2f -> %s",
+            bbox_h / (bbox_w + 1e-3f),
+            is_vertical ? "VERTICAL" : "HORIZONTAL"
+        );
 
-        cov /= static_cast<float>(inliers.size() - 1);
+        centroid.z() += depth_offset_;
+        //Eigen::Matrix3f cov =
+        //    Eigen::Matrix3f::Zero();
 
-        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(cov);
+        //for (const auto& p : inliers)
+        //{
+        //    Eigen::Vector3f centered =
+        //        p - centroid;
 
-        Eigen::Vector3f major_axis =
-            es.eigenvectors().col(2);
+        //    cov +=
+        //        centered *
+        //        centered.transpose();
+        //}
 
-        float vertical_component =
-            std::abs(
-                major_axis.dot(
-                    Eigen::Vector3f::UnitY()));
+        //cov /= static_cast<float>(inliers.size() - 1);
 
-        bool is_vertical =
-            vertical_component > 0.707f;
+        //Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(cov);
+
+        //Eigen::Vector3f major_axis =
+        //    es.eigenvectors().col(2);
+
+        //float vertical_component =
+        //    std::abs(
+        //        major_axis.dot(
+        //            Eigen::Vector3f::UnitY()));
+
+        //bool is_vertical =
+        //    vertical_component > 0.707f;
 
         geometry_msgs::msg::PoseStamped pose_camera;
 
@@ -450,6 +464,8 @@ private:
     int sample_step_;
 
     int min_valid_;
+
+    float depth_offset_;
 };
 
 int main(int argc, char** argv)
