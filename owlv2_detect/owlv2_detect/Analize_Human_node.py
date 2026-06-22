@@ -42,6 +42,7 @@ class HumanAnalyticService(Node):
 
     async def handle_analyze_person(self, request, response):
         action = request.action.lower().strip()
+        response.has_point = False
 
         if action == "color" or action == "attribute":
             return await self._process_only_color(request, response)
@@ -125,6 +126,8 @@ class HumanAnalyticService(Node):
         if gesture_resp.human_detected:
             response.success = True
             response.message = f"person_found_doing_{gesture_resp.direction}"
+            response.has_point = True
+            response.point = gesture_resp.point
             self.get_logger().info(f"Exit, gesture detected in physical direction: {gesture_resp.direction}")
         else:
             response.success = False
@@ -159,6 +162,9 @@ class HumanAnalyticService(Node):
             response.message = f"Filter failed: No one is performing the gesture '{gesture}'."
             self.get_logger().warn(response.message)
             return response
+
+        response.has_point = True
+        response.point = gesture_resp.point
 
         self.get_logger().info(f"Gesture '{gesture}' validated in {gesture_resp.direction}. Running clothing verification...")
         if not self._check_service(self.owl_client, "OWLv2"):
