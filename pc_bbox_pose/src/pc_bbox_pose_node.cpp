@@ -41,7 +41,7 @@ public:
         declare_parameter<int>("sample_step", 1);
         declare_parameter<int>("min_valid", 20);
         declare_parameter<double>("depth_offset_m", 0.0);
-        declare_parameter<std::string>("depth_axis", "x");
+        declare_parameter<std::string>("depth_axis", "auto");
 
         cloud_topic_ =
             get_parameter("pointcloud_topic").as_string();
@@ -64,14 +64,15 @@ public:
 
         if (depth_axis_ != "x" &&
             depth_axis_ != "y" &&
-            depth_axis_ != "z")
+            depth_axis_ != "z" &&
+            depth_axis_ != "auto")
         {
             RCLCPP_WARN(
                 get_logger(),
-                "Invalid depth_axis='%s'. Falling back to 'x'",
+                "Invalid depth_axis='%s'. Falling back to 'auto'",
                 depth_axis_.c_str());
 
-            depth_axis_ = "x";
+            depth_axis_ = "auto";
         }
 
         sub_ =
@@ -182,7 +183,6 @@ private:
                 static_cast<int>(cloud.height) - 1);
 
         std::vector<Eigen::Vector3f> points;
-        std::vector<float> depth_samples;
 
         for (int v = y1; v < y2; v += sample_step_)
         {
@@ -202,7 +202,6 @@ private:
                         oz))
                 {
                     points.emplace_back(x, y, z);
-                    depth_samples.push_back(depthValue(points.back()));
                 }
             }
         }
@@ -217,6 +216,22 @@ private:
             return;
         }
 
+        const std::string effective_depth_axis =
+            effectiveDepthAxis(cloud.header.frame_id);
+
+        std::vector<float> depth_samples;
+        depth_samples.reserve(points.size());
+        for (const auto& p : points)
+        {
+            depth_samples.push_back(depthValue(p, effective_depth_axis));
+        }
+
+        RCLCPP_INFO(
+            get_logger(),
+            "BboxToPose cloud_frame=%s depth_axis=%s",
+            cloud.header.frame_id.c_str(),
+            effective_depth_axis.c_str());
+
         // Depth filter
         float med_depth = median(depth_samples);
 
@@ -224,7 +239,7 @@ private:
 
         for (const auto& p : points)
         {
-            if (std::abs(depthValue(p) - med_depth) < 0.15f)
+            if (std::abs(depthValue(p, effective_depth_axis) - med_depth) < 0.15f)
             {
                 inliers.push_back(p);
             }
@@ -263,7 +278,7 @@ private:
             is_vertical ? "VERTICAL" : "HORIZONTAL"
         );
 
-        applyDepthOffset(centroid);
+        applyDepthOffset(centroid, effective_depth_axis);
         //Eigen::Matrix3f cov =
         //    Eigen::Matrix3f::Zero();
 
@@ -466,14 +481,31 @@ private:
         return v[v.size() / 2];
     }
 
-    float depthValue(const Eigen::Vector3f& p) const
+    std::string effectiveDepthAxis(const std::string& frame_id) const
     {
-        if (depth_axis_ == "y")
+        if (depth_axis_ != "auto")
+        {
+            return depth_axis_;
+        }
+
+        if (frame_id.find("optical") != std::string::npos)
+        {
+            return "z";
+        }
+
+        return "x";
+    }
+
+    float depthValue(
+        const Eigen::Vector3f& p,
+        const std::string& axis) const
+    {
+        if (axis == "y")
         {
             return p.y();
         }
 
-        if (depth_axis_ == "z")
+        if (axis == "z")
         {
             return p.z();
         }
@@ -481,15 +513,17 @@ private:
         return p.x();
     }
 
-    void applyDepthOffset(Eigen::Vector3f& p) const
+    void applyDepthOffset(
+        Eigen::Vector3f& p,
+        const std::string& axis) const
     {
-        if (depth_axis_ == "y")
+        if (axis == "y")
         {
             p.y() += depth_offset_;
             return;
         }
 
-        if (depth_axis_ == "z")
+        if (axis == "z")
         {
             p.z() += depth_offset_;
             return;
