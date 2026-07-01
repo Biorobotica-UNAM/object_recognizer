@@ -27,6 +27,7 @@ setup(
             'owlv2_node = owlv2_detect.OWL_service:main',
             'Analize_node = owlv2_detect.Analize_node:main',
             'Analize_Human_node = owlv2_detect.Analize_Human_node:main',
+            'owl_2d= owlv2_detect.owl_2d:main',
         ],
     },
 )
