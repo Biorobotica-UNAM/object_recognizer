@@ -41,6 +41,7 @@ public:
         declare_parameter<int>("sample_step", 1);
         declare_parameter<int>("min_valid", 20);
         declare_parameter<double>("depth_offset_m", 0.0);
+        declare_parameter<std::string>("depth_axis", "x");
 
         cloud_topic_ =
             get_parameter("pointcloud_topic").as_string();
@@ -53,6 +54,25 @@ public:
 
         min_valid_ =
             get_parameter("min_valid").as_int();
+
+        depth_offset_ =
+            static_cast<float>(
+                get_parameter("depth_offset_m").as_double());
+
+        depth_axis_ =
+            get_parameter("depth_axis").as_string();
+
+        if (depth_axis_ != "x" &&
+            depth_axis_ != "y" &&
+            depth_axis_ != "z")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Invalid depth_axis='%s'. Falling back to 'x'",
+                depth_axis_.c_str());
+
+            depth_axis_ = "x";
+        }
 
         sub_ =
             create_subscription<PointCloud2>(
@@ -82,9 +102,10 @@ public:
 
         RCLCPP_INFO(
             get_logger(),
-            "PC bbox->pose ready. topic=%s target_frame=%s",
+            "PC bbox->pose ready. topic=%s target_frame=%s depth_axis=%s",
             cloud_topic_.c_str(),
-            target_frame_.c_str());
+            target_frame_.c_str(),
+            depth_axis_.c_str());
     }
 
 private:
@@ -161,7 +182,7 @@ private:
                 static_cast<int>(cloud.height) - 1);
 
         std::vector<Eigen::Vector3f> points;
-        std::vector<float> zs;
+        std::vector<float> depth_samples;
 
         for (int v = y1; v < y2; v += sample_step_)
         {
@@ -181,7 +202,7 @@ private:
                         oz))
                 {
                     points.emplace_back(x, y, z);
-                    zs.push_back(z);
+                    depth_samples.push_back(depthValue(points.back()));
                 }
             }
         }
@@ -197,13 +218,13 @@ private:
         }
 
         // Depth filter
-        float med_z = median(zs);
+        float med_depth = median(depth_samples);
 
         std::vector<Eigen::Vector3f> inliers;
 
         for (const auto& p : points)
         {
-            if (std::abs(p.z() - med_z) < 0.15f) //0.08f-0.15f porque el kineckt tiene ruido aprox de 2-3cm 
+            if (std::abs(depthValue(p) - med_depth) < 0.15f)
             {
                 inliers.push_back(p);
             }
@@ -242,7 +263,7 @@ private:
             is_vertical ? "VERTICAL" : "HORIZONTAL"
         );
 
-        centroid.z() += depth_offset_;
+        applyDepthOffset(centroid);
         //Eigen::Matrix3f cov =
         //    Eigen::Matrix3f::Zero();
 
@@ -445,6 +466,38 @@ private:
         return v[v.size() / 2];
     }
 
+    float depthValue(const Eigen::Vector3f& p) const
+    {
+        if (depth_axis_ == "y")
+        {
+            return p.y();
+        }
+
+        if (depth_axis_ == "z")
+        {
+            return p.z();
+        }
+
+        return p.x();
+    }
+
+    void applyDepthOffset(Eigen::Vector3f& p) const
+    {
+        if (depth_axis_ == "y")
+        {
+            p.y() += depth_offset_;
+            return;
+        }
+
+        if (depth_axis_ == "z")
+        {
+            p.z() += depth_offset_;
+            return;
+        }
+
+        p.x() += depth_offset_;
+    }
+
     std::mutex cloud_mutex_;
 
     PointCloud2::SharedPtr last_cloud_;
@@ -466,6 +519,8 @@ private:
     int min_valid_;
 
     float depth_offset_;
+
+    std::string depth_axis_;
 };
 
 int main(int argc, char** argv)

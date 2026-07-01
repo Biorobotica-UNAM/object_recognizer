@@ -21,15 +21,18 @@ from geometry_msgs.msg import TransformStamped, PoseStamped
 # VERSION ESTABLE
 
 CATEGORY = {
-    "trash": ["bottled water", "soda can", "juice box", "milk carton", "sprite", "coke", "sprite can", "fanta can", "red can", "milk bottle"],
-    "snacks": ["chips", "biscuit pack", "snack bag", "pringles", "popcorn"],
-    "fruits": ["apple", "banana", "orange", "peach", "pear", "strawberry", "lemon"],
+    "drinks": ["coke can", "red bull can", "coke zero can", "pepsi bottle", "milk carton", "soju bottle"],
+    "snacks": ["pringles", "seaweed snack"],
+    "fabric": ["blue shirt", "grey shirt", "white shirt", "black shirt", "hand towel"],
+    "food": ["blue container cornflakes", "instant noodles", "black container cornflakes"],
+    "fruits": ["red apple", "mangostane", "red bellpepper", "peach", "yellow lemon", "yellow bellpepper"],
     "cutlery": ["spoon", "fork", "knife", "chopsticks", "metal spoon", "plastic fork"],
+    "cleaning_supply": ["sponge", "dishwasher tablet", "toothpaste"],
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
     # container_drop_tf_node .
     "container_drop": ["bucket", "red bucket", "trash can", "waste basket", "plastic bin", "container", "open container", "storage bin", "box", "basket"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
-    "toys": ["lego", "doll", "action figure", "board game", "puzzle", "teddy bear"],
+    "toys": ["rubiks cube"],
     "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"]
 }
 
