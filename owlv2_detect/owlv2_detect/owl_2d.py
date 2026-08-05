@@ -49,7 +49,7 @@ class OwlServer(Node):
         # --- Parámetros ---
         self.declare_parameter("image_topic", "/camera/rgb/image_raw")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.28)
+        self.declare_parameter("conf_threshold", 0.36)
 
         self.topic_name = self.get_parameter("image_topic").get_parameter_value().string_value
         self.conf_th = self.get_parameter("conf_threshold").value
@@ -151,6 +151,7 @@ class OwlServer(Node):
             debug_msg.header = header
             self.debug_pub.publish(debug_msg)
 
+			resp.header = header
             resp.detections = det_array.detections
             resp.success = True
             self.det_pub.publish(det_array)

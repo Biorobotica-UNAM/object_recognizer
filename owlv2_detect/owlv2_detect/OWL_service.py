@@ -26,7 +26,6 @@ CATEGORY = {
     "fabric": ["blue shirt", "grey shirt", "white shirt", "black shirt", "hand towel"],
     "food": ["blue container cornflakes", "instant noodles", "black container cornflakes"],
     "fruits": ["red apple", "mangostane", "red bellpepper", "peach", "yellow lemon", "yellow bellpepper"],
-    "trash": ["red apple", "mangostane", "red bellpepper", "peach", "yellow lemon", "yellow bellpepper"],
     "cutlery": ["spoon", "fork", "knife", "chopsticks", "metal spoon", "plastic fork"],
     "cleaning_supply": ["sponge", "dishwasher tablet", "toothpaste"],
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
@@ -34,14 +33,7 @@ CATEGORY = {
     "container_drop": ["bucket", "red bucket", "trash can", "waste basket", "plastic bin", "container", "open container", "storage bin", "box", "basket"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["rubiks cube"],
-    "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"],
-
-    "groceries": ["coke can", "red bull can", "coke zero can", "pepsi bottle", 
-                  "milk carton", "soju bottle", "pringles", "seaweed snack","blue shirt", "grey shirt", 
-                  "white shirt", "black shirt", "hand towel",
-                  "blue container cornflakes", "instant noodles", "black container cornflakes",
-                  "sponge", "dishwasher tablet", "toothpaste",
-                  "rubiks cube" ]
+    "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"]
 }
 
 GENERAL_CLASSES = [
@@ -61,7 +53,7 @@ class OwlServer(Node):
         # --- Parámetros ---
         self.declare_parameter("image_topic", "/kinect/image_raw")
         self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.32)
+        self.declare_parameter("conf_threshold", 0.28)
 
         self.topic_name = self.get_parameter("image_topic").get_parameter_value().string_value
         self.conf_th = self.get_parameter("conf_threshold").value
