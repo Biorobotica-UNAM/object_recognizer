@@ -151,7 +151,7 @@ class OwlServer(Node):
             debug_msg.header = header
             self.debug_pub.publish(debug_msg)
 
-			resp.header = header
+            resp.header = header
             resp.detections = det_array.detections
             resp.success = True
             self.det_pub.publish(det_array)
