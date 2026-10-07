@@ -1,24 +1,27 @@
-# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+import copy
 import threading
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
-from cv_bridge import CvBridge
-from sensor_msgs.msg import Image
-from vision_interfaces.srv import GetDetections, BboxToPose
-from vision_interfaces.msg import YoloDetection, YoloDetections
-from geometry_msgs.msg import Quaternion
+import time
+
 import cv2
+import numpy as np
+import rclpy
 import torch
 import torchvision
+import tf2_geometry_msgs  # noqa: F401
+from cv_bridge import CvBridge
+from geometry_msgs.msg import Quaternion, TransformStamped
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image
+from tf2_ros import Buffer, TransformBroadcaster, TransformListener
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
-from tf2_ros import TransformBroadcaster, TransformListener, Buffer
-import tf2_geometry_msgs 
-from geometry_msgs.msg import TransformStamped, PoseStamped
-
-# VERSION ESTABLE
+from vision_interfaces.msg import YoloDetection, YoloDetections
+from vision_interfaces.srv import GetDetections, BboxToPose
 
 CATEGORY = {
     "drinks": ["coke can", "red bull can", "coke zero can", "pepsi bottle", "milk carton", "soju bottle"],
@@ -36,8 +39,8 @@ CATEGORY = {
     "toys": ["rubiks cube"],
     "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"],
 
-    "groceries": ["coke can", "red bull can", "coke zero can", "pepsi bottle", 
-                  "milk carton", "soju bottle", "pringles", "seaweed snack","blue shirt", "grey shirt", 
+    "groceries": ["coke can", "red bull can", "coke zero can", "pepsi bottle",
+                  "milk carton", "soju bottle", "pringles", "seaweed snack","blue shirt", "grey shirt",
                   "white shirt", "black shirt", "hand towel",
                   "blue container cornflakes", "instant noodles", "black container cornflakes",
                   "sponge", "dishwasher tablet", "toothpaste",
@@ -45,200 +48,256 @@ CATEGORY = {
 }
 
 GENERAL_CLASSES = [
-    "bottled water", "soda can", "juice box", "milk carton", "coffee mug", 
-    "glass cup", "paper plate", "plastic bowl", "metal spoon", "fork", 
-    "knife", "apple", "banana", "orange", "cereal box", "snack bag", 
-    "chips", "bread", "sponge", "soap bottle", "trash can", "backpack", 
-    "laptop", "cell phone", "book", "remote control", "keys", "person", 
+    "bottled water", "soda can", "juice box", "milk carton", "coffee mug",
+    "glass cup", "paper plate", "plastic bowl", "metal spoon", "fork",
+    "knife", "apple", "banana", "orange", "cereal box", "snack bag",
+    "chips", "bread", "sponge", "soap bottle", "trash can", "backpack",
+    "laptop", "cell phone", "book", "remote control", "keys", "person",
     "bottle", "woman", "robot", "chair", "sofa", "dining table", "shelf", "green mug", "purple mug",
     "pink bowl", "purple bowl", "pink cup"
 ]
 
 class OwlServer(Node):
     def __init__(self):
-        super().__init__('owl_server')
-
-        # --- Parámetros ---
-        self.declare_parameter("image_topic", "/kinect/image_raw")
-        self.declare_parameter("model_path", "google/owlv2-base-patch16")
-        self.declare_parameter("conf_threshold", 0.32)
-
-        self.topic_name = self.get_parameter("image_topic").get_parameter_value().string_value
-        self.conf_th = self.get_parameter("conf_threshold").value
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        super().__init__("owl_server")
+        defaults = {
+            "image_topic": "hardware/camera/image_raw",
+            "model_path": "google/owlv2-base-patch16",
+            "bbox_to_pose_service": "/vision/bbox_to_pose",
+            "conf_threshold": 0.32, "nms_iou_class": 0.3, "nms_iou_any": 0.7,
+            "pre_white_balance": False, "pre_denoise": False, "pre_clahe": False,
+            "clahe_clip": 2.0, "clahe_grid": 8, "publish_preprocessed": False,
+            "max_image_age_sec": 2.0, "pose_timeout_sec": 1.0,
+            "tf_ttl_sec": 2.0, "target_frame": "base_link",
+        }
+        for name, value in defaults.items():
+            self.declare_parameter(name, value)
         self.bridge = CvBridge()
-        
-        self.last_cv_image = None
-        self.last_header = None
-        self._img_lock = threading.Lock()           # lock para thread safety
-        self.last_tfs = {}                       
-        self.timer = self.create_timer(0.1, self.publish_last_tf)
+        self._img_lock = threading.Lock()
+        self._infer_lock = threading.Lock()
+        self._tf_lock = threading.Lock()
+        self.last_cv_image = self.last_header = None
+        self.last_tfs = {}
         self.cb_group = ReentrantCallbackGroup()
         self.tf_broadcaster = TransformBroadcaster(self)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-
-
-        # --- Modelo OWLv2 ---
+        self.timer = self.create_timer(0.1, self.expire_tfs)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.get_logger().info(f"Cargando OWLv2 en {self.device}...")
-        self.processor = Owlv2Processor.from_pretrained(self.get_parameter("model_path").value)
-        self.model = Owlv2ForObjectDetection.from_pretrained(
-            self.get_parameter("model_path").value
-        ).to(self.device)                          
-        
+        model_path = self.get_parameter("model_path").value
+        self.processor = Owlv2Processor.from_pretrained(model_path)
+        self.model = Owlv2ForObjectDetection.from_pretrained(model_path).to(self.device)
         if self.device == "cuda":
-            self.model = self.model.half()
+            self.model.half()
         self.model.eval()
-
-        # --- Clientes y Pubs ---
-        self.pose_client = self.create_client(BboxToPose, "bbox_to_pose", callback_group=self.cb_group)
-        self.create_subscription(Image, self.topic_name, self.cb_image, 10, callback_group=self.cb_group)
-        
+        self.dtype = next(self.model.parameters()).dtype
+        self.pose_client = self.create_client(
+            BboxToPose, self.get_parameter("bbox_to_pose_service").value,
+            callback_group=self.cb_group)
+        self.create_subscription(
+            Image, self.get_parameter("image_topic").value, self.cb_image,
+            qos_profile_sensor_data, callback_group=self.cb_group)
         self.det_pub = self.create_publisher(YoloDetections, "/vision/detections", 10)
         self.debug_pub = self.create_publisher(Image, "/vision/owl/debug_image", 10)
-        
-        self.srv = self.create_service(GetDetections, "owl/owlv2_service", 
-                                       self.handle_analyze, callback_group=self.cb_group)
-        
-        self.get_logger().info(f"OWLv2 operativo. Escuchando {self.topic_name}")
+        self.pre_pub = self.create_publisher(Image, "/vision/owl/preprocessed_image", 10)
+        self.srv = self.create_service(
+            GetDetections, "owl/owlv2_service", self.handle_analyze,
+            callback_group=self.cb_group)
 
     def cb_image(self, msg):
-        with self._img_lock:                        
-            self.last_cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            self.last_header = msg.header
+        try:
+            image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            with self._img_lock:
+                self.last_cv_image = image
+                self.last_header = copy.deepcopy(msg.header)
+        except Exception as exc:
+            self.get_logger().error(f"Imagen inválida: {exc}")
 
-    def publish_last_tf(self):
-        for t in self.last_tfs.values():         
-            t.header.stamp = self.get_clock().now().to_msg()
-            self.tf_broadcaster.sendTransform(t)
+    def expire_tfs(self):
+        # Nunca rejuvenecer una observación cambiando su timestamp.
+        # La caché local caduca; TF2 conserva su propio historial.
+        now = time.monotonic()
+        with self._tf_lock:
+            self.last_tfs = {key: value for key, value in self.last_tfs.items()
+                             if value[1] > now}
+
+    def preprocess(self, image):
+        out = image
+        if self.get_parameter("pre_white_balance").value:
+            f = out.astype(np.float32)
+            means = f.reshape(-1, 3).mean(axis=0) + 1e-6
+            out = np.clip(f * (means.mean() / means), 0, 255).astype(np.uint8)
+        if self.get_parameter("pre_denoise").value:
+            out = cv2.bilateralFilter(out, 5, 40, 40)
+        if self.get_parameter("pre_clahe").value:
+            grid = max(1, int(self.get_parameter("clahe_grid").value))
+            clahe = cv2.createCLAHE(
+                clipLimit=max(0.01, float(self.get_parameter("clahe_clip").value)),
+                tileGridSize=(grid, grid))
+            lab = cv2.cvtColor(out, cv2.COLOR_BGR2LAB)
+            lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+            out = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        return out
+
+    def _infer(self, image, queries):
+        h, w = image.shape[:2]
+        with self._infer_lock:
+            inputs = self.processor(text=[queries], images=cv2.cvtColor(
+                image, cv2.COLOR_BGR2RGB), return_tensors="pt")
+            inputs = {key: value.to(self.device) for key, value in inputs.items()}
+            inputs["pixel_values"] = inputs["pixel_values"].to(self.dtype)
+            with torch.inference_mode():
+                outputs = self.model(**inputs)
+                outputs.logits = outputs.logits.float()
+                outputs.pred_boxes = outputs.pred_boxes.float()
+                # OWLv2 normalmente aplica padding inferior/derecho a cuadrado.
+                padded = getattr(self.processor.image_processor, "do_pad", True)
+                size = [max(h, w)] * 2 if padded else [h, w]
+                result = self.processor.post_process_grounded_object_detection(
+                    outputs, threshold=float(self.get_parameter("conf_threshold").value),
+                    target_sizes=torch.tensor([size], device=self.device))[0]
+                boxes, scores, labels = result["boxes"], result["scores"], result["labels"]
+                boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, w)
+                boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, h)
+                valid = (torch.isfinite(boxes).all(dim=1) & torch.isfinite(scores)
+                         & (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1]))
+                boxes, scores, labels = boxes[valid], scores[valid], labels[valid]
+                keep = torchvision.ops.batched_nms(
+                    boxes, scores, labels, float(self.get_parameter("nms_iou_class").value))
+                boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
+                keep = torchvision.ops.nms(
+                    boxes, scores, float(self.get_parameter("nms_iou_any").value))
+                return (boxes[keep].cpu().numpy(), scores[keep].cpu().numpy(),
+                        labels[keep].cpu().numpy())
+
+    async def get_pose(self, request):
+        future = self.pose_client.call_async(request)
+        timeout = max(0.01, float(self.get_parameter("pose_timeout_sec").value))
+        timer = self.create_timer(timeout, future.cancel, callback_group=self.cb_group)
+        try:
+            return await future
+        finally:
+            timer.cancel()
+            self.destroy_timer(timer)
 
     async def handle_analyze(self, req, resp):
+        try:
+            return await self._analyze(req, resp)
+        except Exception as exc:
+            self.get_logger().error(f"Error en detección OWL: {exc}")
+            resp.success = False
+            resp.message = f"Error en detección: {exc}"
+            return resp
 
-        raw_queries = req.queries if req.queries else ["object"]
-        final_queries = []
-        for q in raw_queries:
-            q_lower = q.lower().strip()
-            if q_lower in CATEGORY: final_queries.extend(CATEGORY[q_lower])
-            elif q_lower in ["all", "everything"]: final_queries.extend(GENERAL_CLASSES)
-            else: final_queries.append(q_lower)
-
+    async def _analyze(self, req, resp):
+        queries = []
+        for text in req.queries or ["object"]:
+            text = text.lower().strip()
+            queries.extend(CATEGORY.get(text, GENERAL_CLASSES if text in (
+                "all", "everything") else [text]))
+        queries = list(dict.fromkeys(text for text in queries if text))
+        if not queries:
+            resp.success, resp.message = False, "Las consultas están vacías"
+            return resp
         with self._img_lock:
             if self.last_cv_image is None:
-                resp.success = False
-                resp.message = "Error: No hay imagen disponible"
+                resp.success, resp.message = False, "No hay imagen disponible"
                 return resp
-            cv_img = self.last_cv_image.copy()
-            header = self.last_header
-
-        # inferencia
-        img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        inputs = self.processor(text=[final_queries], images=img_rgb, return_tensors="pt").to(self.device)
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-
-        target_sizes = torch.tensor([img_rgb.shape[:2]]).to(self.device)
-        results = self.processor.post_process_grounded_object_detection(
-            outputs, threshold=self.conf_th, target_sizes=target_sizes
-        )[0]
-
-       
-        if len(results["boxes"]) > 0:
-            keep = torchvision.ops.nms(results["boxes"], results["scores"], iou_threshold=0.3)
-            det_array = YoloDetections()
-            det_array.header = header
-
-            class_counter = {}
-
-            for idx in keep:
-                box = results["boxes"][idx].int().cpu().numpy()
-                raw_class_name = final_queries[results["labels"][idx]]
-                class_name = raw_class_name.replace(" ", "_")
-
-                if class_name not in class_counter:
-                    class_counter[class_name] = 0
-                else:
-                    class_counter[class_name] += 1
-                
-                instance_id = class_counter[class_name]
-
-                d = YoloDetection()
-                d.class_name = raw_class_name
-                d.confidence = float(results["scores"][idx].cpu().item())
-                d.x_min, d.y_min, d.x_max, d.y_max = map(float, box)
-
-
-                if self.pose_client.service_is_ready():
-                    pose_req = BboxToPose.Request()
-                    m = 5
-                    pose_req.x1, pose_req.y1 = int(max(0, box[0]-m)), int(max(0, box[1]-m))
-                    pose_req.x2, pose_req.y2 = int(box[2]+m), int(box[3]+m)
-                    
-                    result_3d = await self.pose_client.call_async(pose_req)
-                    
-                    if result_3d.success:
-                        try:
-                            pose_in_base = self.tf_buffer.transform(result_3d.pose, "base_link")
-
-                            # orientation.x == 1.0 → objeto vertical → agarre horizontal (-120° en Y)
-                            # orientation.x == 0.0 → objeto horizontal → agarre top (-30° en Y)
-                            is_vertical = (result_3d.pose.pose.orientation.y < -0.5)
-
-                            q = Quaternion()
-                            if is_vertical:
-                                q.w, q.x, q.y, q.z = 0.5, 0.0, -0.8660254, 0.0
-                                self.get_logger().info(f"OWL_{class_name}_{instance_id}: VERTICAL -> agarre horizontal -120°")
-                            else:
-                                q.w, q.x, q.y, q.z = 0.9659258, 0.0, -0.258819, 0.0
-                                self.get_logger().info(f"OWL_{class_name}_{instance_id}: HORIZONTAL -> agarre top -30°")
-
-                            t = TransformStamped()
-                            t.header.stamp = self.get_clock().now().to_msg()
-                            t.header.frame_id = "base_link"
-                            t.child_frame_id = f"OWL_{class_name}_{instance_id}"
-
-                            t.transform.translation.x = float(pose_in_base.pose.position.x)
-                            t.transform.translation.y = float(pose_in_base.pose.position.y)
-                            t.transform.translation.z = float(pose_in_base.pose.position.z)
-
-                            t.transform.rotation = q
-                        
-                            self.tf_broadcaster.sendTransform(t)
-                            self.last_tfs[t.child_frame_id] = t
-                            self.get_logger().info(f"TF publicada: {t.child_frame_id}")
-
-                        except Exception as e:
-                            self.get_logger().error(f"Error en transformación: {e}")
-
-                det_array.detections.append(d)
-                cv2.rectangle(cv_img, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
-                cv2.putText(cv_img, f"OWL_{d.class_name}_{instance_id}", (box[0], box[1]-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-            debug_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
-            debug_msg.header = header
-            self.debug_pub.publish(debug_msg)
-            
-            resp.detections = det_array.detections
-            resp.success = True
-            self.det_pub.publish(det_array)
-        else:
-            resp.success = False
-            resp.message = "No se detectó nada"
-
+            image, header = self.last_cv_image.copy(), copy.deepcopy(self.last_header)
+        resp.header = header
+        stamp_ns = header.stamp.sec * 10**9 + header.stamp.nanosec
+        age = (self.get_clock().now().nanoseconds - stamp_ns) / 1e9
+        max_age = float(self.get_parameter("max_image_age_sec").value)
+        if stamp_ns == 0 or (max_age > 0 and (age < 0 or age > max_age)):
+            resp.success, resp.message = False, "Imagen sin timestamp válido o demasiado antigua"
+            return resp
+        model_image = self.preprocess(image)
+        if self.get_parameter("publish_preprocessed").value:
+            msg = self.bridge.cv2_to_imgmsg(model_image, "bgr8")
+            msg.header = header
+            self.pre_pub.publish(msg)
+        boxes, scores, labels = self._infer(model_image, queries)
+        array = YoloDetections()
+        array.header = header
+        counters, pose_count = {}, 0
+        h, w = image.shape[:2]
+        for box, score, label in zip(boxes, scores, labels):
+            x1, y1, x2, y2 = map(float, box)
+            name = queries[int(label)]
+            frame_name = name.replace(" ", "_")
+            instance = counters.get(frame_name, 0)
+            counters[frame_name] = instance + 1
+            detection = YoloDetection()
+            detection.class_name, detection.confidence = name, float(score)
+            detection.x_min, detection.y_min = x1, y1
+            detection.x_max, detection.y_max = x2, y2
+            array.detections.append(detection)
+            if self.pose_client.service_is_ready():
+                request = BboxToPose.Request()
+                request.header = header
+                request.x1, request.y1 = int(max(0, x1 - 5)), int(max(0, y1 - 5))
+                request.x2, request.y2 = int(min(w, np.ceil(x2 + 5))), int(min(h, np.ceil(y2 + 5)))
+                try:
+                    result = await self.get_pose(request)
+                    if result is not None and result.success:
+                        pose = self.tf_buffer.transform(
+                            result.pose, self.get_parameter("target_frame").value)
+                        vertical = result.pose.pose.orientation.y < -0.5
+                        rotation = Quaternion()
+                        rotation.w = 0.5 if vertical else 0.9659258
+                        rotation.y = -0.8660254 if vertical else -0.258819
+                        transform = TransformStamped()
+                        transform.header = copy.deepcopy(pose.header)
+                        transform.child_frame_id = f"OWL_{frame_name}_{instance}"
+                        transform.transform.translation.x = pose.pose.position.x
+                        transform.transform.translation.y = pose.pose.position.y
+                        transform.transform.translation.z = pose.pose.position.z
+                        transform.transform.rotation = rotation
+                        pose_stamp = transform.header.stamp
+                        pose_age = (self.get_clock().now().nanoseconds - (
+                            pose_stamp.sec * 10**9 + pose_stamp.nanosec)) / 1e9
+                        ttl = float(self.get_parameter("tf_ttl_sec").value)
+                        if ttl > 0 and 0 <= pose_age < ttl:
+                            self.tf_broadcaster.sendTransform(transform)
+                            with self._tf_lock:
+                                self.last_tfs[transform.child_frame_id] = (
+                                    transform, time.monotonic() + ttl - pose_age)
+                            pose_count += 1
+                    else:
+                        self.get_logger().warning(f"Sin pose 3D para {name} (fallo o timeout)")
+                except Exception as exc:
+                    self.get_logger().warning(f"Pose 3D no disponible para {name}: {exc}")
+            p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
+            cv2.rectangle(image, p1, p2, (0, 255, 0), 2)
+            cv2.putText(image, f"OWL_{name}_{instance}", (p1[0], max(12, p1[1] - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        # Publicar también resultados vacíos para limpiar consumidores 2D.
+        self.det_pub.publish(array)
+        debug = self.bridge.cv2_to_imgmsg(image, "bgr8")
+        debug.header = header
+        self.debug_pub.publish(debug)
+        resp.detections = array.detections
+        resp.success = bool(array.detections)
+        resp.message = (f"{len(array.detections)} detecciones 2D; {pose_count} poses 3D"
+                        if resp.success else "No se detectó nada")
         return resp
+
 
 def main():
     rclpy.init()
     node = OwlServer()
-    executor = rclpy.executors.MultiThreadedExecutor()
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

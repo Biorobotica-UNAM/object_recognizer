@@ -19,6 +19,9 @@
 #include <cstring>
 #include <vector>
 #include <mutex>
+#include <deque>
+#include <limits>
+#include <stdexcept>
 
 using sensor_msgs::msg::PointCloud2;
 using vision_interfaces::srv::BboxToPose;
@@ -75,6 +78,16 @@ public:
             depth_axis_ = "auto";
         }
 
+        declare_parameter<int>("cloud_history_size", 60);
+        declare_parameter<double>("max_sync_delta_sec", 0.10);
+        cloud_history_size_ = get_parameter("cloud_history_size").as_int();
+        max_sync_delta_sec_ = get_parameter("max_sync_delta_sec").as_double();
+        if (cloud_history_size_ < 1 || !std::isfinite(max_sync_delta_sec_) ||
+            max_sync_delta_sec_ < 0.0 || sample_step_ < 1 || min_valid_ < 1)
+        {
+            throw std::invalid_argument("Invalid cloud history, sync tolerance or sampling parameters");
+        }
+
         sub_ =
             create_subscription<PointCloud2>(
                 cloud_topic_,
@@ -114,31 +127,82 @@ private:
     void cloudCb(const PointCloud2::SharedPtr msg)
     {
         std::lock_guard<std::mutex> lk(cloud_mutex_);
-        last_cloud_ = msg;
+        const auto stamp = stampNanoseconds(msg->header.stamp);
+        if (stamp <= 0)
+        {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Ignoring PointCloud without valid timestamp");
+            return;
+        }
+        // Clear history on clock reset (e.g. a simulation restart).
+        if (!cloud_history_.empty() &&
+            stamp < stampNanoseconds(cloud_history_.back()->header.stamp))
+        {
+            cloud_history_.clear();
+        }
+        cloud_history_.push_back(msg);
+        while (cloud_history_.size() > static_cast<size_t>(cloud_history_size_))
+        {
+            cloud_history_.pop_front();
+        }
     }
 
     void handle(
         const std::shared_ptr<BboxToPose::Request> req,
         std::shared_ptr<BboxToPose::Response> res)
     {
+        res->success = false;
+        const auto requested_stamp = stampNanoseconds(req->header.stamp);
+        if (requested_stamp <= 0)
+        {
+            RCLCPP_WARN(get_logger(), "BboxToPose requires the source image timestamp");
+            return;
+        }
         PointCloud2::SharedPtr cloud_snap;
-
+        int64_t best_delta = std::numeric_limits<int64_t>::max();
         {
             std::lock_guard<std::mutex> lk(cloud_mutex_);
-            cloud_snap = last_cloud_;
+            for (const auto& candidate : cloud_history_)
+            {
+                const auto stamp = stampNanoseconds(candidate->header.stamp);
+                const auto delta = stamp >= requested_stamp ? stamp - requested_stamp
+                                                          : requested_stamp - stamp;
+                if (delta < best_delta)
+                {
+                    best_delta = delta;
+                    cloud_snap = candidate;
+                }
+            }
         }
-
-        if (!cloud_snap)
+        if (!cloud_snap || static_cast<double>(best_delta) / 1e9 > max_sync_delta_sec_)
         {
-            RCLCPP_WARN(
-                get_logger(),
-                "No PointCloud received yet");
-
-            res->success = false;
+            RCLCPP_WARN(get_logger(),
+                        "No PointCloud matching image timestamp (nearest delta=%.3f s, limit=%.3f s)",
+                        cloud_snap ? static_cast<double>(best_delta) / 1e9 : -1.0,
+                        max_sync_delta_sec_);
             return;
         }
 
         const auto& cloud = *cloud_snap;
+        // Pixel bboxes require an organized cloud registered to the RGB image.
+        if (cloud.width == 0 || cloud.height <= 1 || req->x1 < 0 || req->y1 < 0 ||
+            req->x2 <= req->x1 || req->y2 <= req->y1 ||
+            static_cast<uint32_t>(req->x2) > cloud.width ||
+            static_cast<uint32_t>(req->y2) > cloud.height)
+        {
+            RCLCPP_WARN(get_logger(), "Invalid bbox or incompatible organized cloud dimensions");
+            return;
+        }
+        if (cloud.is_bigendian || cloud.point_step == 0 ||
+            static_cast<uint64_t>(cloud.row_step) <
+                static_cast<uint64_t>(cloud.width) * cloud.point_step ||
+            cloud.data.size() < static_cast<uint64_t>(cloud.row_step) * cloud.height)
+        {
+            RCLCPP_WARN(get_logger(), "Unsupported or incomplete PointCloud layout");
+            return;
+        }
+        RCLCPP_DEBUG(get_logger(), "Selected PointCloud with image delta=%.3f s",
+                     static_cast<double>(best_delta) / 1e9);
 
         uint32_t ox, oy, oz;
 
@@ -425,7 +489,8 @@ private:
     {
         for (const auto& f : cloud.fields)
         {
-            if (f.name == name)
+            if (f.name == name && f.datatype == sensor_msgs::msg::PointField::FLOAT32 &&
+                f.count >= 1 && static_cast<uint64_t>(f.offset) + sizeof(float) <= cloud.point_step)
             {
                 offset = f.offset;
                 return true;
@@ -532,9 +597,16 @@ private:
         p.x() += depth_offset_;
     }
 
+    static int64_t stampNanoseconds(const builtin_interfaces::msg::Time& stamp)
+    {
+        return static_cast<int64_t>(stamp.sec) * 1000000000LL + stamp.nanosec;
+    }
+
+    int cloud_history_size_;
+    double max_sync_delta_sec_;
     std::mutex cloud_mutex_;
 
-    PointCloud2::SharedPtr last_cloud_;
+    std::deque<PointCloud2::SharedPtr> cloud_history_;
 
     rclcpp::Subscription<PointCloud2>::SharedPtr sub_;
 
