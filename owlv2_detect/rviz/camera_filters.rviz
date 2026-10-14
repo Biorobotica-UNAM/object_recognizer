@@ -1,0 +1,460 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Fixed Frame: filters
+    Frame Rate: 30
+  Displays:
+  - Class: rviz_default_plugins/Image
+    Name: Original
+    Enabled: true
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/original
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Name: Filtrada
+    Enabled: true
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/output
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Name: original
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/original
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: block_3
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/block_3
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: binomial_3
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/binomial_3
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: block_5
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/block_5
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: binomial_5
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/binomial_5
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: block_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/block_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: binomial_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/binomial_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: block_11
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/block_11
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: binomial_11
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/binomial_11
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: diff_x
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/diff_x
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: diff_y
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/diff_y
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: diff_mag
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/diff_mag
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: prewitt_x
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/prewitt_x
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: prewitt_y
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/prewitt_y
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: prewitt_mag
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/prewitt_mag
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: sobel_x
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/sobel_x
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: sobel_y
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/sobel_y
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: sobel_mag
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/sobel_mag
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss1_5
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss1_5
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss1_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss1_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss1_11
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss1_11
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: laplacian
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/laplacian
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss2_5
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss2_5
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss2_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss2_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: gauss2_11
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/gauss2_11
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: unsharp_block_3
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/unsharp_block_3
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: unsharp_block_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/unsharp_block_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: unsharp_binomial_3
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/unsharp_binomial_3
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: unsharp_binomial_7
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/unsharp_binomial_7
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+  - Class: rviz_default_plugins/Image
+    Name: blur_5
+    Enabled: false
+    Normalize Range: false
+    Min Value: 0
+    Max Value: 255
+    Median window: 5
+    Topic:
+      Value: /filters/debug/blur_5
+      Depth: 1
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      History Policy: Keep Last
+    Value: false
+Window Geometry:
+  Width: 1280
+  Height: 800
