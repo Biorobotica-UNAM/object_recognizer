@@ -10,6 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/rviz', ['rviz/camera_filters.rviz']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -28,6 +29,7 @@ setup(
             'Analize_node = owlv2_detect.Analize_node:main',
             'Analize_Human_node = owlv2_detect.Analize_Human_node:main',
             'owl_2d= owlv2_detect.owl_2d:main',
+            'camera_filters = owlv2_detect.Camera_filters:main',
         ],
     },
 )
