@@ -206,7 +206,9 @@ private:
             }
         }
 
-        if (points.size() < static_cast<size_t>(min_valid_))
+        const size_t min_points_required =
+            std::min<size_t>(static_cast<size_t>(min_valid_), 8);
+        if (points.size() < min_points_required)
         {
             RCLCPP_WARN(
                 get_logger(),
@@ -223,29 +225,75 @@ private:
         depth_samples.reserve(points.size());
         for (const auto& p : points)
         {
-            depth_samples.push_back(depthValue(p, effective_depth_axis));
+            const float d = depthValue(p, effective_depth_axis);
+            if (d > 0.15f)
+            {
+                depth_samples.push_back(d);
+            }
+        }
+
+        if (depth_samples.size() < min_points_required)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Not enough valid positive-depth points");
+
+            res->success = false;
+            return;
+        }
+
+        std::sort(depth_samples.begin(), depth_samples.end());
+        const float q10_depth = depth_samples[depth_samples.size() * 10 / 100];
+        const float q25_depth = depth_samples[depth_samples.size() / 4];
+        const float med_depth = depth_samples[depth_samples.size() / 2];
+        const float q75_depth = depth_samples[depth_samples.size() * 75 / 100];
+
+        float ref_depth = med_depth;
+        if ((q75_depth - q10_depth) > 0.35f)
+        {
+            const size_t min_cluster_size =
+                std::max<size_t>(6, depth_samples.size() / 10);
+            for (size_t i = 0; i < depth_samples.size(); ++i)
+            {
+                const float candidate = depth_samples[i];
+                size_t j = i;
+                while (j < depth_samples.size() &&
+                       (depth_samples[j] - candidate) <= 0.25f)
+                {
+                    ++j;
+                }
+                const size_t cluster_count = j - i;
+                if (cluster_count >= min_cluster_size)
+                {
+                    ref_depth = depth_samples[i + cluster_count / 2];
+                    break;
+                }
+            }
         }
 
         RCLCPP_INFO(
             get_logger(),
-            "BboxToPose cloud_frame=%s depth_axis=%s",
+            "BboxToPose cloud_frame=%s depth_axis=%s ref_depth=%.3f (q10=%.3f q25=%.3f med=%.3f q75=%.3f)",
             cloud.header.frame_id.c_str(),
-            effective_depth_axis.c_str());
+            effective_depth_axis.c_str(),
+            ref_depth,
+            q10_depth,
+            q25_depth,
+            med_depth,
+            q75_depth);
 
         // Depth filter
-        float med_depth = median(depth_samples);
-
         std::vector<Eigen::Vector3f> inliers;
 
         for (const auto& p : points)
         {
-            if (std::abs(depthValue(p, effective_depth_axis) - med_depth) < 0.15f)
+            if (std::abs(depthValue(p, effective_depth_axis) - ref_depth) < 0.18f)
             {
                 inliers.push_back(p);
             }
         }
 
-        if (inliers.size() < 10)
+        if (inliers.size() < 6)
         {
             RCLCPP_WARN(
                 get_logger(),
