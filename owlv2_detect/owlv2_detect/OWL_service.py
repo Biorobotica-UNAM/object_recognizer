@@ -22,18 +22,25 @@ from geometry_msgs.msg import TransformStamped, PoseStamped
 
 CATEGORY = {
     "drinks": ["coke can", "red bull can", "coke zero can", "pepsi bottle", "milk carton", "soju bottle"],
+    "drink": ["coke can", "red bull can", "coke zero can", "pepsi bottle", "milk carton", "soju bottle"],
     "snacks": ["pringles", "seaweed snack"],
+    "snack": ["pringles", "seaweed snack"],
     "fabric": ["blue shirt", "grey shirt", "white shirt", "black shirt", "hand towel"],
     "food": ["blue container cornflakes", "instant noodles", "black container cornflakes"],
     "fruits": ["red apple", "mangostane", "red bellpepper", "peach", "yellow lemon", "yellow bellpepper"],
+    "fruit": ["red apple", "mangostane", "red bellpepper", "peach", "yellow lemon", "yellow bellpepper"],
     "cutlery": ["spoon", "fork", "knife", "chopsticks", "metal spoon", "plastic fork"],
     "cleaning_supply": ["sponge", "dishwasher tablet", "toothpaste"],
+    "cleaning_supplies": ["sponge", "dishwasher tablet", "toothpaste"],
     "containers": ["backpack", "handbag", "suitcase", "box", "basket", "dishwasher", "washing machine"],
     # container_drop_tf_node .
     "container_drop": ["bucket", "red bucket", "trash can", "waste basket", "plastic bin", "container", "open container", "storage bin", "box", "basket"],
     "electrodomestics": ["fridge", "oven", "microwave", "toaster", "kettle", "coffee maker"],
     "toys": ["rubiks cube"],
-    "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"]
+    "toy": ["rubiks cube"],
+    "tableware": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"],
+    "dishes": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"],
+    "dish": ["red bowl", "red plate", "mug", "cup","bowl", "plastic bowl", "plastic mug", "glass cup"]
 }
 
 GENERAL_CLASSES = [

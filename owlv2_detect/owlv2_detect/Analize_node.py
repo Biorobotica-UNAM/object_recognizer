@@ -7,6 +7,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from vision_interfaces.msg import YoloDetections, YoloDetection
 from vision_interfaces.srv import GetAnalytics, GetDetections
+from owlv2_detect.OWL_service import CATEGORY, GENERAL_CLASSES
 
 
 class VisionAnalyticService(Node):
@@ -103,6 +104,28 @@ class VisionAnalyticService(Node):
                 max_iou, best_id = iou, obj_id
         return best_id
 
+    def _matches_target(self, det_class_name: str, target_class: str) -> bool:
+        if not target_class:
+            return True
+        t = target_class.strip().lower()
+        t_space = t.replace("_", " ")
+        d = det_class_name.strip().lower()
+        d_space = d.replace("_", " ")
+
+        if t in ("all", "everything", "objects", "object"):
+            return True
+        if t in d or t_space in d_space:
+            return True
+
+        category_items = CATEGORY.get(t) or CATEGORY.get(t_space)
+        if category_items:
+            for item in category_items:
+                item_lower = item.strip().lower()
+                if item_lower == d_space or item_lower in d_space or d_space in item_lower:
+                    return True
+
+        return False
+
     def _process_detections(self, target_class: str = "", reset_count: bool = False):
         if reset_count:
             self.cumulative_count = 0
@@ -129,12 +152,12 @@ class VisionAnalyticService(Node):
             new_det.x_min, new_det.y_min = det.x_min, det.y_min
             new_det.x_max, new_det.y_max = det.x_max, det.y_max
             new_det.confidence = det.confidence
-            new_det.class_name = f"ID_{match_id}_{det.class_name}"
+            new_det.class_name = det.class_name
 
             obj_data = {'msg': new_det, 'area': area, 'raw_label': det.class_name, 'confidence': det.confidence}
             all_processed.append(obj_data)
 
-            if not target_class or target_class.lower() in det.class_name.lower():
+            if self._matches_target(det.class_name, target_class):
                 target_only.append(obj_data)
 
         target_only.sort(key=lambda x: x['area'], reverse=True)
@@ -143,18 +166,35 @@ class VisionAnalyticService(Node):
     async def handle_count(self, request, response):
         target = request.target_class.strip().lower()
 
-        if not await self._call_owl([target] if target else ["all"]):
+        if not self._check_service(self.owl_client):
             response.success = False
-            response.message = f"OWLv2 found no detections for '{target}'."
+            response.message = "OWLv2 service offline."
+            self.get_logger().error(response.message)
             return response
 
-        _, target_only = self._process_detections(
+        has_detections = await self._call_owl([target] if target else ["all"])
+        if not has_detections:
+            if request.reset_count:
+                self.cumulative_count = 0
+                self.object_history = {}
+                self.next_id = 0
+            response.success          = True
+            response.current_count    = 0
+            response.class_count      = 0
+            response.total_cumulative = self.cumulative_count
+            response.message          = f"Found 0 '{target}'."
+            self.get_logger().info(response.message)
+            return response
+
+        all_processed, target_only = self._process_detections(
             target_class=target,
             reset_count=request.reset_count
         )
-        response.success     = True
-        response.class_count = len(target_only)
-        response.message     = f"Found {len(target_only)} '{target}'."
+        response.success          = True
+        response.current_count    = len(all_processed)
+        response.class_count      = len(target_only)
+        response.total_cumulative = self.cumulative_count
+        response.message          = f"Found {len(target_only)} '{target}'."
         self.get_logger().info(response.message)
         return response
 
@@ -182,7 +222,9 @@ class VisionAnalyticService(Node):
         best = target_only[0] if mode == "big" else target_only[-1]
 
         response.success         = True
+        response.has_best_match  = True
         response.best_match      = best['msg']
+        response.detections      = [item['msg'] for item in target_only]
         response.best_match_area = float(best['area'])
         response.message         = f"'{mode}' of '{target}': {best['msg'].class_name}."
         self.get_logger().info(response.message)
@@ -214,9 +256,11 @@ class VisionAnalyticService(Node):
             return response
 
         best = max(color_only, key=lambda x: x['confidence'])
-        response.success = True
-        response.best_match = best['msg']
-        response.message = f"Found '{color_query}': {best['msg'].class_name} (conf={best['confidence']:.2f})."
+        response.success        = True
+        response.has_best_match = True
+        response.best_match     = best['msg']
+        response.detections     = [item['msg'] for item in color_only]
+        response.message        = f"Found '{color_query}': {best['msg'].class_name} (conf={best['confidence']:.2f})."
         self.get_logger().info(response.message)
         return response
 
